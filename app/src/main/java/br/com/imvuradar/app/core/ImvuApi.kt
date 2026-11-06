@@ -105,32 +105,53 @@ class ImvuApi {
     // ---------------- login ----------------
     fun login(user: String, pass: String): Boolean {
         lastError = ""
+        android.util.Log.i("IMVURadar", "login: tentando (user=${user.take(2)}***)")
         val payload = JSONObject()
             .put("gdpr_cookie_acceptance", true)
             .put("username", user)
             .put("password", pass)
             .put("remember_device", true)
-        val (code, text) = raw("/login", "POST", payload.toString()) ?: return false
+        val res = raw("/login", "POST", payload.toString())
+        if (res == null) {
+            android.util.Log.e("IMVURadar", "login: excecao de rede: $lastError")
+            lastError = "falha de rede: " + (lastError ?: "?")
+            return false
+        }
+        val (code, text) = res
+        android.util.Log.i("IMVURadar", "login: HTTP $code (${text.length} bytes)")
         if (code !in 200..299) {
             lastError = "login recusado (HTTP $code)"
             return false
         }
-        val env = try { JSONObject(text) } catch (e: Exception) { null } ?: return false
-        if (env.optString("status") != "success") {
+        val env = try { JSONObject(text) } catch (e: Exception) { null }
+        if (env == null || env.optString("status") != "success") {
             lastError = "login negado"
+            android.util.Log.e("IMVURadar", "login: resposta nao-success")
             return false
         }
-        val data = firstNode(env)?.optJSONObject("data") ?: return false
+        val data = firstNode(env)?.optJSONObject("data")
+        if (data == null) {
+            lastError = "resposta sem sauce"
+            android.util.Log.e("IMVURadar", "login: sem no de dados")
+            return false
+        }
         sauce = data.optString("sauce")
-        val me = getJson("/login/me") ?: return false
-        val mnode = firstNode(me) ?: return false
-        cid = mnode.optJSONObject("relations")?.optString("quick_chat_profile").orEmpty()
-        sessionId = mnode.optJSONObject("data")?.optString("session_id").orEmpty()
+        val me = getJson("/login/me")
+        if (me == null) {
+            lastError = "sessao (/login/me) falhou"
+            android.util.Log.e("IMVURadar", "login: /login/me nulo")
+            return false
+        }
+        val mnode = firstNode(me)
+        cid = mnode?.optJSONObject("relations")?.optString("quick_chat_profile").orEmpty()
+        sessionId = mnode?.optJSONObject("data")?.optString("session_id").orEmpty()
         if (cid.isEmpty() || sessionId.isEmpty()) {
-            lastError = "sessao invalida"
+            lastError = "sessao invalida (cid/session)"
+            android.util.Log.e("IMVURadar", "login: cid/session vazio")
             return false
         }
         loggedIn = true
+        android.util.Log.i("IMVURadar", "login OK (cid $cid, sauce ${sauce.length} chars)")
         return true
     }
 

@@ -336,5 +336,6 @@ object Tracker {
             .put("reconnecting", reconnecting)
             .put("lastEventAt", lastEventAt)
             .put("monitored", imq.watchedRooms.size)
+            .put("error", api.lastError)
     }
 }

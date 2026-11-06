@@ -49,6 +49,7 @@ class ImqClient(private val onEvent: (JSONObject) -> Unit) {
         ws = client.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 attempt = 0
+                android.util.Log.i("IMVURadar", "imq: conectado, autenticando")
                 val meta = JSONArray().put(
                     JSONObject()
                         .put("record", "metadata")
@@ -71,11 +72,13 @@ class ImqClient(private val onEvent: (JSONObject) -> Unit) {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 connected = false
+                android.util.Log.e("IMVURadar", "imq: falha -> ${t.message}")
                 scheduleReconnect(cid, sessionId)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 connected = false
+                android.util.Log.i("IMVURadar", "imq: fechado ($code) reagendando")
                 scheduleReconnect(cid, sessionId)
             }
         })
@@ -136,9 +139,11 @@ class ImqClient(private val onEvent: (JSONObject) -> Unit) {
         when (m.optString("record")) {
             "msg_g2c_result" -> {
                 if (m.has("error") && !m.isNull("error")) {
+                    android.util.Log.e("IMVURadar", "imq: erro de auth -> ${m.optString("error")}")
                     onEvent(JSONObject().put("type", "imq_error").put("message", m.optString("error")))
                 } else {
                     connected = true
+                    android.util.Log.i("IMVURadar", "imq: autenticado, floodgates abertos")
                     onEvent(JSONObject().put("type", "imq_ready"))
                     ws?.send(JSONObject().put("record", "msg_c2g_open_floodgates").toString())
                     watchedRooms.forEach { sendSubscribe(it) }
