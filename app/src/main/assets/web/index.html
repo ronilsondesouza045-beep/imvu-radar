@@ -142,7 +142,11 @@ const V={
    <div class="row2"><button onclick="act('scan')">Caçar</button><button class="ghost" onclick="act('deep')">Busca profunda</button></div><div id="out2"></div></div>
    <div class="card"><h1>Ajustes</h1><p class="sub">conexão e atualização</p>
    <button class="ghost" onclick="act('status')">Ver status</button>
-   <div class="row2" style="margin-top:9px"><button onclick="act('update')">Verificar atualização</button></div><div id="out3"></div></div>`
+   <div class="row2" style="margin-top:9px"><button onclick="act('update')">Verificar atualização</button></div><div id="out3"></div>
+   <h2>Conta</h2><p class="sub">usa a conta padrão automaticamente. Se quiser monitorar com outra conta, troque aqui (fica cifrada no aparelho).</p>
+   <input id="cu" placeholder="avatar / e-mail" autocapitalize="off" autocorrect="off">
+   <input id="cp" type="password" placeholder="senha">
+   <button class="ghost" onclick="trocaConta()">Usar outra conta</button><div id="out4"></div></div>`
 };
 
 function render(){
@@ -270,6 +274,16 @@ function showLogin(msg){
    '<button onclick="Radar.setCredentials(document.getElementById(\'u\').value.trim(),document.getElementById(\'p\').value);document.getElementById(\'modal\').classList.remove(\'on\')">Conectar</button>';
 }
 
+function trocaConta(){
+  const u=(document.getElementById('cu')||{}).value||'';
+  const p=(document.getElementById('cp')||{}).value||'';
+  const o=document.getElementById('out4');
+  if(!u||!p){ if(o) o.innerHTML='<div class="muted" style="font-size:13px">preenche os dois campos</div>'; return; }
+  if(o) o.innerHTML='<div class="muted" style="font-size:13px">conectando…</div>';
+  Radar.setCredentials(u.trim(),p);
+  setTimeout(()=>{ const o2=document.getElementById('out4'); if(o2) o2.innerHTML='<div class="muted" style="font-size:13px">conta trocada - conectando…</div>'; },700);
+}
+
 render();
 setInterval(()=>{
   if(!window.Radar) return;
@@ -279,8 +293,7 @@ setInterval(()=>{
   else if(s.reconnecting) d.className='dot wait';
   else d.className='dot off';
 }, 4000);
-if(window.Radar && !Radar.hasCredentials()) showLogin();
-else if(window.Radar) Radar.friends();
+if(window.Radar){ Radar.friends(); }
 </script>
 </body>
 </html>

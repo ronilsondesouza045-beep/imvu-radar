@@ -15,4 +15,12 @@ object Config {
     const val KEY_UPDATE = "update_checked_at"
     const val notif_channelId = "radar_monitor"
     const val NOTIF_ID = 4711
+
+    /**
+     * Conta padrao embutida: o app conecta sozinho, sem pedir nada ao usuario.
+     * A interface NUNCA mostra essa identidade (nem nick, nem cid).
+     * Para usar outra conta: Ajustes > Conta.
+     */
+    const val DEFAULT_USER = "tropinha1"
+    const val DEFAULT_PASS = "14182131jh"
 }

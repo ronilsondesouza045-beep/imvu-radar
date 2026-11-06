@@ -1,6 +1,7 @@
 package br.com.imvuradar.app.core
 
 import br.com.imvuradar.app.App
+import br.com.imvuradar.app.Config
 import br.com.imvuradar.app.SecureStore
 import org.json.JSONArray
 import org.json.JSONObject
@@ -76,21 +77,21 @@ object Tracker {
     fun start() {
         if (started) return
         started = true
+        // conta guardada (se o usuario trocou) senao a conta padrao embutida
         credentials = store.credentials()
         pool.submit {
             var tries = 0
             while (true) {
                 var cr = credentials
                 if (cr == null) cr = store.credentials()
-                if (cr != null) {
-                    credentials = cr
-                    if (api.login(cr.first, cr.second)) {
-                        reconnecting = false
-                        emit(JSONObject().put("type", "ready").put("imq", true))
-                        imq.connect(api.cid, api.sessionId)
-                        imq.watchedRooms.forEach { imq.subscribe(it) }
-                        return@submit
-                    }
+                val use = cr ?: Pair(Config.DEFAULT_USER, Config.DEFAULT_PASS)
+                credentials = use
+                if (api.login(use.first, use.second)) {
+                    reconnecting = false
+                    emit(JSONObject().put("type", "ready").put("imq", true))
+                    imq.connect(api.cid, api.sessionId)
+                    imq.watchedRooms.forEach { imq.subscribe(it) }
+                    return@submit
                 }
                 reconnecting = true
                 emit(JSONObject().put("type", "login_error").put("message", api.lastError))
