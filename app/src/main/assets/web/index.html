@@ -279,12 +279,22 @@ window.__radarEvent = function(e){
       o.innerHTML=h;
     }
   }
-else if(t==='room'){
+  else if(t==='room'){
     const meta=e.meta||{}, people=e.people||[];
-    if(meta.render) setBg(meta.render);
     const o=out();
-    if(o) o.innerHTML='<div class="roomcover"><img src="'+esc(meta.render)+'"><div class="ov"><div class="rm">'+esc(meta.name)+'</div><div class="muted mono" style="font-size:11.5px">['+esc(e.rid)+'] '+esc(meta.privacy||'')+' · '+(meta.occupancy||'?')+'/'+(meta.capacity||'?')+'</div></div></div>'+
-      '<h2>Dentro ('+people.length+')</h2>'+peopleGrid(people);
+    if(o){
+      if(meta.restricted){
+        o.innerHTML='<div class="tag off" style="margin-bottom:10px">SALA RESTRITA</div>'+
+          '<div class="muted" style="font-size:13px">O IMVU bloqueou a leitura desta sala para outra conta ('+esc(meta.error||'403')+'):<br>'+
+          '<span class="mono">'+esc(meta.message||'')+'</span></div>'+
+          '<div class="hint">Salas VIP/pessoais (My Room, Private Rooftop Terrace) só são lidas pela conta DONA da sala ou por conta com acesso liberado. Salas privadas normais são lidas sim — usa a aba Privada com o dono.</div>';
+      } else {
+        if(meta.render) setBg(meta.render);
+        o.innerHTML='<div class="roomcover"><img src="'+esc(meta.render)+'"><div class="ov"><div class="rm">'+esc(meta.name||'')+'</div>'+
+          '<div class="muted mono" style="font-size:11.5px">['+esc(e.rid)+'] '+esc(meta.privacy||'')+' · '+(meta.occupancy||'?')+'/'+(meta.capacity||'?')+'</div></div></div>'+
+          '<h2>Dentro ('+people.length+')</h2>'+peopleGrid(people);
+      }
+    }
   }
   else if(t==='enter'){
     const o=out();

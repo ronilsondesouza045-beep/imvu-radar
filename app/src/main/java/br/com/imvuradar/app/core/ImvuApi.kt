@@ -266,7 +266,25 @@ class ImvuApi {
     }
 
     fun roomMeta(rid: String): JSONObject? {
-        val env = getJson("/room/room-$rid") ?: return null
+        val r = raw("/room/room-$rid")
+        if (r == null) return null
+        if (r.first !in 200..299) {
+            // 403 ROOM_NODE-047 = conteudo restrito (sala VIP / pessoal): so a conta dono enxerga
+            var err = ""
+            var msg = ""
+            try {
+                val j = JSONObject(r.second)
+                err = j.optString("error")
+                msg = j.optString("message")
+            } catch (_: Exception) { }
+            return JSONObject()
+                .put("roomId", rid)
+                .put("restricted", true)
+                .put("error", err)
+                .put("message", msg)
+                .put("name", "")
+        }
+        val env = try { JSONObject(r.second) } catch (e: Exception) { return null }
         val den = env.optJSONObject("denormalized") ?: return null
         val keys = den.keys()
         while (keys.hasNext()) {
@@ -281,6 +299,9 @@ class ImvuApi {
         val m = roomMeta(rid) ?: JSONObject()
         val out = JSONObject()
         out.put("roomId", rid)
+        out.put("restricted", m.optBoolean("restricted", false))
+        out.put("error", m.optString("error", ""))
+        out.put("message", m.optString("message", ""))
         out.put("name", m.optString("name", rid))
         out.put("privacy", m.optString("privacy", "?"))
         out.put("occupancy", m.optInt("occupancy", 0))
