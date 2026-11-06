@@ -117,7 +117,7 @@ window.__radarImage=function(id,data){
   document.querySelectorAll('img[data-imgid="'+id+'"]').forEach(function(el){ if(data) el.src=data; });
 };
 const has = window.Radar ? true : false;
-const TABS=[['onde','🔎','Onde'],['sala','🏠','Sala'],['entrada','🚪','Entrar'],['movimento','🌀','Movim.'],['contatos','👥','Contatos'],['mais','⋯','Mais']];
+const TABS=[['onde','🔎','Onde'],['sala','🏠','Sala'],['entrada','🚪','Entrar'],['movimento','🌀','Movim.'],['contatos','👥','Contatos'],['privada','🔒','Privada'],['mais','⋯','Mais']];
 let TAB=(location.hash||'').replace('#','');
 if(!TABS.some(t=>t[0]===TAB)) TAB='onde';
 
@@ -146,7 +146,15 @@ const V={
    <div id="out" class="list" style="margin-top:12px"></div></div>`,
  contatos:()=>`<div class="card"><h1>Contatos</h1><p class="sub">suas conexões e onde cada uma está</p>
    <button onclick="act('friends')">Carregar</button><div id="out" style="margin-top:12px"></div></div>`,
- mais:()=>`<div class="card"><h1>Vigia</h1><p class="sub">avisa quando o alvo troca de sala</p>
+   privada:()=>`<div class="card" style="border-color:rgba(255,179,71,.35)"><h1 style="color:#ffcf87">Sala privada</h1>
+   <p class="sub">com o nick do <b>dono</b> da sala, o app varre as salas dele e lê o roster — inclusive de sala privada (a API libera o roster de qualquer sala com login).</p>
+   <input id="ptgt" placeholder="alvo (nick)" autocapitalize="off" autocorrect="off">
+   <input id="pown" placeholder="dono da sala (ou lista)" autocapitalize="off" autocorrect="off">
+   <input id="pmax" type="number" value="400" style="margin-bottom:10px" title="até que número de sala">
+   <button class="warn" onclick="act('hunt')">Caçar em sala privada</button>
+   <div id="phunt" style="margin-top:10px"></div>
+   <div id="out"></div></div>`,
+  mais:()=>`<div class="card"><h1>Vigia</h1><p class="sub">avisa quando o alvo troca de sala</p>
    <input id="nick" placeholder="nick" autocapitalize="off" autocorrect="off">
    <input id="int" type="number" value="15" style="margin-bottom:10px">
    <button onclick="act('vigia')">Vigiar</button><div id="out"></div></div>
@@ -181,6 +189,14 @@ function act(a){
   else if(a==='vigia'){ const n=$('#nick').value.trim(); load('vigia ligada: '+n); Radar.watchTarget(n); }
   else if(a==='scan'){ load('varredura…','out2'); Radar.scan($('#tgt').value.trim(), $('#own').value.trim(), 250); }
   else if(a==='deep'){ load('busca profunda…','out2'); Radar.deepScan($('#tgt').value.trim(), 40, 40); }
+  else if(a==='hunt'){
+    const t=(document.getElementById('ptgt')||{}).value||'';
+    const o=(document.getElementById('pown')||{}).value||'';
+    const m=parseInt((document.getElementById('pmax')||{}).value)||400;
+    const ph=document.getElementById('phunt');
+    if(ph) ph.innerHTML='<div class="bar"><i></i></div><div class="muted" style="font-size:12.5px">iniciando...</div>';
+    Radar.hunt(t,o,m);
+  }
   else if(a==='status'){ load('status…','out3'); setTimeout(()=>{ const s=Radar.status(); const o=out('out3'); if(o) o.innerHTML='<div class="kv" style="font-size:13px">conectado: '+(s.loggedIn?'sim':'nao')+'<br>canal ao vivo: '+(s.imq?'ativo':'reconectando')+'<br>salas monitoradas: '+s.monitored+'</div>'; },50); }
   else if(a==='update'){ load('consultando…','out3'); Radar.checkUpdate(); }
 }
@@ -284,6 +300,28 @@ else if(t==='room'){
   else if(t==='deep_hit'){ const b=document.getElementById('deepBox'); if(b){ b.innerHTML='<div class="tag on">ACHEI</div>'+peopleGrid(e.people||[]); if(e.meta&&e.meta.render) setBg(e.meta.render);} }
   else if(t==='deep_done'){ const b=document.getElementById('deepBox'); if(b) b.innerHTML='<div class="empty">'+esc(e.error||('terminou ('+(e.scanned||0)+' varridas)'))+'</div>'; }
   else if(t==='alert'){ const b=document.getElementById('deepBox'); if(b) b.innerHTML='<div class="tag on">ALERTA: '+esc((e.person&&e.person.username)||e.nick)+' '+(e.action==='created'?'ENTROU':(e.action==='deleted'?'SAIU':'mudou'))+' na sala '+esc(e.room)+'</div>'; }
+  else if(t==='hunt_start'){
+    const ph=document.getElementById('phunt');
+    if(ph) ph.innerHTML='<div class="bar"><i></i></div><div class="muted" style="font-size:12.5px">alvo: '+esc((e.target&&e.target.username)||'')+'</div>';
+  }
+  else if(t==='hunt_progress'){
+    const ph=document.getElementById('phunt');
+    if(ph) ph.innerHTML='<div class="bar"><i></i></div><div class="muted" style="font-size:12.5px">'+esc(e.msg||'')+'</div>';
+  }
+  else if(t==='hunt_hit'){
+    const o2=document.getElementById('out');
+    if(o2){
+      const m=e.meta||{};
+      o2.innerHTML='<div class="card" style="margin-top:12px;border-color:rgba(46,230,168,.4)"><div class="tag on">ACHEI NA SALA PRIVADA</div>'+
+        (m.render?'<div class="roomcover" style="margin-top:10px"><img src="'+esc(m.render)+'"><div class="ov"><div class="rm">'+esc(m.name||'')+'</div><div class="muted mono" style="font-size:11.5px">['+esc(e.roomId)+'] · '+(m.occupancy||'?')+'/'+(m.capacity||'?')+'</div></div></div>':'')+
+        '<div class="badges" style="margin:8px 0">'+tagRoom(m.privacy)+(e.owner?'<span class="muted">dono: '+esc(e.owner)+'</span>':'')+'</div>'+
+        peopleGrid(e.people||[],'ninguem visivel')+'</div>';
+    }
+  }
+  else if(t==='hunt_done'){
+    const ph=document.getElementById('phunt');
+    if(ph) ph.innerHTML=e.found?'<div class="tag on">caca concluida - achado</div>':'<div class="empty">caca concluida - alvo nao achado nas salas varredas</div>';
+  }
   else if(t==='scan_start'){ load('varredura…','out2'); }
   else if(t==='scan_progress'){ load(e.msg,'out2'); }
   else if(t==='scan_hit'){ const o=out('out2'); if(o){ if(e.meta&&e.meta.render) setBg(e.meta.render); o.innerHTML='<div class="tag on">ACHEI</div>'+peopleGrid(e.people||[]);} }

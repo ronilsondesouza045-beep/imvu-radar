@@ -121,6 +121,12 @@ class MainActivity : AppCompatActivity() {
     inner class Bridge {
 
         @JavascriptInterface
+        fun hunt(target: String, owners: String, maxn: String): String {
+            Tracker.privateHunt(target, owners, maxn.toIntOrNull() ?: 400)
+            return "queued"
+        }
+
+        @JavascriptInterface
         fun status(): String = Tracker.status().toString()
 
         /** render do IMVU com sessao -> data URI (imagens do imvu pedem login) */

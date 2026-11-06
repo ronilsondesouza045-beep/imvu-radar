@@ -181,6 +181,47 @@ object Tracker {
         }
     }
 
+    /**
+     * CAÇA EM SALA PRIVADA: com o nick do DONO da sala, varre as salas dele
+     * (<donocid>-1..N) e lê o roster (privada inclusive) pra achar o alvo.
+     */
+    fun privateHunt(target: String, owners: String, maxn: Int) {
+        pool.submit {
+            val tp = api.resolve(target)
+            if (tp == null) {
+                emit(JSONObject().put("type", "hunt_done").put("error", "alvo nao encontrado"))
+                return@submit
+            }
+            val jid = "hunt-${System.currentTimeMillis()}"
+            emit(JSONObject().put("type", "hunt_start").put("jid", jid).put("target", personJson(tp)))
+            val ownerNicks = owners.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            val list = if (ownerNicks.isEmpty()) listOf(target) else ownerNicks
+            var any = false
+            for (on in list) {
+                val op = api.resolve(on) ?: continue
+                emit(
+                    JSONObject().put("type", "hunt_progress").put("jid", jid)
+                        .put("msg", "dono $on (cid ${op.cid}) - varredura 1..$maxn")
+                )
+                val hits = api.findInOwnerRooms(tp.cid, op.cid, maxn) { m ->
+                    emit(JSONObject().put("type", "hunt_progress").put("jid", jid).put("msg", m))
+                }
+                for (h in hits) {
+                    any = true
+                    emit(
+                        JSONObject().put("type", "hunt_hit").put("jid", jid)
+                            .put("roomId", h.first).put("meta", h.second)
+                            .put("people", peopleJson(h.third)).put("owner", op.username)
+                    )
+                }
+                if (hits.isEmpty()) {
+                    emit(JSONObject().put("type", "hunt_progress").put("jid", jid).put("msg", "alvo nao esta nas salas de $on"))
+                }
+            }
+            emit(JSONObject().put("type", "hunt_done").put("jid", jid).put("found", any))
+        }
+    }
+
     fun where(nick: String) {
         pool.submit {
             val p = api.resolve(nick)

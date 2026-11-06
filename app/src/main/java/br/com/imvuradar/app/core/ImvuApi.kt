@@ -340,6 +340,49 @@ class ImvuApi {
     }
 
     /**acha em quais salas o cid esta - TODAS (a pessoa pode estar em varias ao mesmo tempo) */
+    /**
+     * Varre <cid>-1..<cid>-maxn e devolve as salas OCUPADAS do dono.
+     * O no da sala e publico (nao precisa de login) e o ROSTER de uma sala
+     * privada tambem e legivel com sessao - por isso da pra caçar em sala privada.
+     */
+    fun roomsOfOwner(
+        cid: String,
+        maxn: Int = 400,
+        onlyOccupied: Boolean = true,
+        onProgress: ((String) -> Unit)? = null
+    ): List<JSONObject> {
+        val out = mutableListOf<JSONObject>()
+        for (n in 1..maxn) {
+            val rid = "$cid-$n"
+            val meta = roomMeta(rid) ?: continue
+            val occ = meta.optInt("occupancy", 0)
+            if (onlyOccupied && occ <= 0) continue
+            meta.put("roomId", rid)
+            out.add(meta)
+            onProgress?.invoke("sala $rid: ${meta.optString("name")} ($occ)")
+        }
+        return out
+    }
+
+    /** procura o alvo em TODAS as salas (privadas inclusive) de um dono */
+    fun findInOwnerRooms(
+        targetCid: String,
+        ownerCid: String,
+        maxn: Int = 400,
+        onProgress: ((String) -> Unit)? = null
+    ): List<Triple<String, JSONObject, List<Person>>> {
+        val hits = mutableListOf<Triple<String, JSONObject, List<Person>>>()
+        for (m in roomsOfOwner(ownerCid, maxn, true, onProgress)) {
+            val rid = m.optString("roomId")
+            val people = roster(rid)
+            if (people.any { it.cid == targetCid }) {
+                hits.add(Triple(rid, m, people))
+                onProgress?.invoke("ACHEI $targetCid em $rid")
+            }
+        }
+        return hits
+    }
+
     fun findAllRoomsFor(
         targetCid: String,
         listIds: List<String> = listOf("friends", "explore", "recent", "feature"),
