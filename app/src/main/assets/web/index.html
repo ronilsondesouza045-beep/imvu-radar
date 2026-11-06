@@ -207,30 +207,44 @@ window.__radarEvent = function(e){
   else if(t==='login_error'){ $('#dot').className='dot wait'; showLogin(e.message); }
   else if(t==='imq_error'){ $('#dot').className='dot wait'; }
   else if(t==='where'){
-    const d=e.data||{}, p=d.profile||{}, room=(d.room&&d.room.roomId)?d.room:null, people=d.people||[];
-    if(room&&room.render) setBg(room.render);
+    const d=e.data||{}, p=d.profile||{}, rooms=d.rooms||[], people=d.people||[];
+    const list=(rooms&&rooms.length)?rooms:((d.room&&d.room.roomId)?[d.room]:[]);
+    if(list.length&&list[0].render) setBg(list[0].render);
     if(p.render){ try{ Radar.fetchImage(p.render,'av_'+p.cid); }catch(_){} }
     const o=out();
     if(o){
-      o.innerHTML='<div class="hero" style="margin-top:16px"><div class="picwrap">'+
+      const badge=p.online?'<span class="tag on">ONLINE</span>':((p.is_vip||p.is_ap)?'<span class="tag off">PRESENÇA OCULTA</span>':'<span class="tag off">NÃO VISTO</span>');
+      let h='<div class="hero" style="margin-top:16px"><div class="picwrap">'+
       '<img class="pic" data-imgid="av_'+esc(p.cid)+'" src="'+esc(p.avatar||'')+'" alt="">'+
       (p.avatar?'<img class="photo" src="'+esc(p.avatar)+'" alt="">':'')+
       '</div><div style="min-width:0"><div class="nm">'+esc(p.display_name||p.username)+'</div>'+
       '<div class="muted mono" style="font-size:12px">'+esc(p.username)+' · cid '+esc(p.cid)+'</div>'+
-      '<div class="badges"><span class="tag '+(p.online?'on':'off')+'">'+(p.online?'ONLINE':'NAO VISTO')+'</span>'+(p.is_vip?'<span class="tag vip">VIP</span>':'')+(p.is_ap?'<span class="tag vip">AP</span>':'')+(room?tagRoom(room.privacy):'')+'</div>'+
-      (room?'<div class="rm">'+esc(room.name)+'</div><div class="muted mono" style="font-size:12px">['+esc(room.roomId)+'] · '+(room.occupancy||'?')+'/'+(room.capacity||'?')+(room.owner?' · dono '+esc(room.owner):'')+'</div>':'')+
-      '</div></div>'+
-      (room?'':'<div class="card" style="margin-top:12px;background:rgba(255,95,126,.07);border-color:rgba(255,95,126,.3)"><b style="color:#ff8fa3">'+(p.is_vip?'Presença oculta (VIP/AP)':'Não achei a sala')+'</b>'+
-      '<p class="sub" style="margin:8px 0 10px">'+(p.is_vip?'Conta VIP/AP pode esconder a presença: o IMVU devolve "não visto" mesmo com a pessoa online. O roster da sala é a verdade.'+
-      ' Ele não é amigo desta conta, então não aparece nas listas do IMVU.':'Ele não é amigo desta conta, então não aparece nas listas do IMVU.')+
-      ' Dá pra caçar de três formas:</p>'+
-      '<div class="row2"><button class="warn" onclick="act2(\'deep\')">Busca profunda</button><button onclick="act2(\'watch\')">Alerta ao vivo</button></div>'+
-      '<div class="row2" style="margin-top:9px"><button class="ghost" onclick="vaiCaca()">Tenho o nick do dono da sala</button></div>'+
-      '<div id="deepBox" class="muted" style="font-size:12.5px;margin-top:10px"></div></div>')+
-      (room?'<h2>Dentro ('+people.length+')</h2>'+peopleGrid(people):'');
+      '<div class="badges">'+badge+(p.is_vip?'<span class="tag vip">VIP</span>':'')+(p.is_ap?'<span class="tag vip">AP</span>':'')+'</div>';
+      if(list.length) h+='<div class="rm">em '+list.length+' sala'+(list.length>1?'s':'')+'</div>';
+      h+='</div></div>';
+      if(list.length){
+        h+='<h2 style="margin-top:16px">Salas</h2>';
+        list.forEach(function(r){
+          h+='<div class="card" style="margin-bottom:12px">';
+          if(r.render) h+='<div class="roomcover"><img src="'+esc(r.render)+'"><div class="ov"><div class="rm">'+esc(r.name||r.roomId)+'</div>'+
+            '<div class="muted mono" style="font-size:11.5px">['+esc(r.roomId)+'] · '+(r.occupancy||'?')+'/'+(r.capacity||'?')+'</div></div></div>';
+          else h+='<div class="rm">'+esc(r.name||r.roomId)+' <span class="muted mono">['+esc(r.roomId)+']</span></div>';
+          h+='<div class="badges" style="margin:8px 0">'+tagRoom(r.privacy)+(r.owner?'<span class="muted">dono: '+esc(r.owner)+'</span>':'')+'</div>';
+          h+=peopleGrid(r.people||[],'ninguem visivel');
+          h+='</div>';
+        });
+      } else {
+        h+='<div class="card" style="margin-top:12px;background:rgba(255,95,126,.07);border-color:rgba(255,95,126,.3)"><b style="color:#ff8fa3">'+(p.is_vip||p.is_ap?'Presença oculta (VIP/AP)':'Não achei a sala')+'</b>'+
+        '<p class="sub" style="margin:8px 0 10px">'+(p.is_vip||p.is_ap?'Conta VIP/AP pode esconder a presença: o IMVU devolve "não visto" mesmo com a pessoa online. O roster da sala é a verdade. ':'')+
+        'Ele não é amigo desta conta, então não aparece nas listas do IMVU. Dá pra caçar de três formas:</p>'+
+        '<div class="row2"><button class="warn" onclick="act2(\'deep\')">Busca profunda</button><button onclick="act2(\'watch\')">Alerta ao vivo</button></div>'+
+        '<div class="row2" style="margin-top:9px"><button class="ghost" onclick="vaiCaca()">Tenho o nick do dono da sala</button></div>'+
+        '<div id="deepBox" class="muted" style="font-size:12.5px;margin-top:10px"></div></div>';
+      }
+      o.innerHTML=h;
     }
   }
-  else if(t==='room'){
+else if(t==='room'){
     const meta=e.meta||{}, people=e.people||[];
     if(meta.render) setBg(meta.render);
     const o=out();

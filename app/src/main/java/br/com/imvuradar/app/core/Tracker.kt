@@ -133,20 +133,23 @@ object Tracker {
                 emit(JSONObject().put("type", "where").put("nick", nick).put("error", "nick nao encontrado"))
                 return@submit
             }
-            // FASE 1 (rapida): listas oficiais do IMVU
-            var found = api.findRoomFor(p.cid, listOf("friends"))
-            if (found == null) found = api.findRoomFor(p.cid, listOf("explore", "recent", "feature"))
-            emitWhere(p, found)
+            // FASE 1 (rapida): listas oficiais do IMVU - pode achar varias salas
+            val hits = api.findAllRoomsFor(p.cid, listOf("friends", "explore", "recent", "feature")).toMutableList()
+            emitWhere(p, hits)
 
-            // FASE 2 (background): salas PROPRIAS do alvo + varredura funda
+            // FASE 2 (background): salas PROPRIAS do alvo + busca funda
             pool.submit {
                 try {
-                    val own = api.findInOwnRooms(p.cid, 120)
-                    if (own != null) {
-                        emitWhere(p, own)
-                    } else {
+                    val own = api.findAllInOwnRooms(p.cid, 120)
+                    val known = hits.map { it.first }.toMutableSet()
+                    own.forEach { if (known.add(it.first)) hits.add(it) }
+                    emitWhere(p, hits)
+
+                    if (hits.isEmpty()) {
                         val deep = api.deepScan(p.cid, 25, 25, null)
-                        if (deep != null) emitWhere(p, deep)
+                        val known2 = hits.map { it.first }.toMutableSet()
+                        deep.forEach { if (known2.add(it.first)) hits.add(it) }
+                        if (deep.isNotEmpty()) emitWhere(p, hits)
                     }
                 } catch (e: Exception) {
                     android.util.Log.e("IMVURadar", "fase2: ${e.message}")
@@ -155,20 +158,21 @@ object Tracker {
         }
     }
 
-    private fun emitWhere(p: Person, found: Pair<String, List<Person>>?) {
-        var roomJson: JSONObject? = null
-        var people = emptyList<Person>()
-        if (found != null) {
-            val meta = api.roomJson(found.first)
-            meta.put("people", found.second.size)
+    private fun emitWhere(p: Person, hits: List<Pair<String, List<Person>>>) {
+        val rooms = org.json.JSONArray()
+        var first: JSONObject? = null
+        for (h in hits) {
+            val meta = api.roomJson(h.first)
+            meta.put("people", h.second.size)
             meta.put("source", "listas do imvu")
-            roomJson = meta
-            people = found.second
+            rooms.put(meta)
+            if (first == null) first = meta
         }
         val data = JSONObject()
             .put("profile", personJson(p))
-            .put("room", roomJson ?: JSONObject())
-            .put("people", peopleJson(people))
+            .put("rooms", rooms)
+            .put("room", first ?: JSONObject())
+            .put("people", peopleJson(hits.firstOrNull()?.second ?: emptyList()))
         emit(JSONObject().put("type", "where").put("nick", p.username).put("data", data))
     }
 

@@ -324,13 +324,43 @@ class ImvuApi {
         return null
     }
 
-    /** busca profunda: 1 salto a partir das pessoas que estao nas salas conhecidas */
+    /**acha em quais salas o cid esta - TODAS (a pessoa pode estar em varias ao mesmo tempo) */
+    fun findAllRoomsFor(
+        targetCid: String,
+        listIds: List<String> = listOf("friends", "explore", "recent", "feature")
+    ): List<Pair<String, List<Person>>> {
+        val out = mutableListOf<Pair<String, List<Person>>>()
+        val seen = mutableSetOf<String>()
+        for (lid in listIds) {
+            for (rid in roomListRooms(lid)) {
+                if (!seen.add(rid)) continue
+                val people = roster(rid)
+                if (people.any { it.cid == targetCid }) out.add(Pair(rid, people))
+            }
+        }
+        return out
+    }
+
+    /** TODAS as salas proprias onde o cid esta */
+    fun findAllInOwnRooms(targetCid: String, maxn: Int = 120): List<Pair<String, List<Person>>> {
+        val out = mutableListOf<Pair<String, List<Person>>>()
+        for (n in 1..maxn) {
+            val rid = "${targetCid}-$n"
+            val meta = roomMeta(rid) ?: continue
+            val people = roster(rid)
+            if (people.any { it.cid == targetCid }) out.add(Pair(rid, people))
+        }
+        return out
+    }
+
+    /** busca profunda: 1 salto a partir das pessoas que estao nas salas conhecidas (TODAS as salas achadas) */
     fun deepScan(
         targetCid: String,
         peopleLimit: Int = 25,
         roomsPer: Int = 25,
         progress: ((String) -> Unit)? = null
-    ): Pair<String, List<Person>>? {
+    ): List<Pair<String, List<Person>>> {
+        val out = mutableListOf<Pair<String, List<Person>>>()
         val cands = peopleInLists(listOf("friends", "explore", "recent", "feature"), peopleLimit)
         progress?.invoke("pessoas candidatas: ${cands.size}")
         var done = 0
@@ -341,14 +371,14 @@ class ImvuApi {
                 val meta = roomMeta(rid) ?: continue
                 val people = roster(rid)
                 if (people.any { it.cid == targetCid }) {
-                    progress?.invoke("achei em $rid")
-                    return Pair(rid, people)
+                    out.add(Pair(rid, people))
+                    progress?.invoke("achei em $rid (total ${out.size})")
                 }
             }
             done++
             if (done % 5 == 0) progress?.invoke("varridas $done/${cands.size} pessoas")
         }
-        progress?.invoke("terminou: $done pessoas, nao achado")
-        return null
+        progress?.invoke("terminou: $done pessoas, ${out.size} sala(s) com o alvo")
+        return out
     }
 }
