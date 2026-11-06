@@ -383,7 +383,7 @@ class ImvuApi {
         extraCids: List<String> = emptyList()
     ): List<Pair<String, List<Person>>> {
         val out = mutableListOf<Pair<String, List<Person>>>()
-        val cands = peopleInLists(listOf("friends", "explore", "recent", "feature"), peopleLimit)
+        val cands = peopleInLists(listOf("friends", "explore", "recent", "feature"), peopleLimit).toMutableList()
         val cidSet = cands.map { it.cid }.toMutableSet()
         for (c in extraCids) if (cidSet.add(c)) cands.add(Person(c, c, c, "", ""))
         progress?.invoke("pessoas candidatas: ${cands.size}")
