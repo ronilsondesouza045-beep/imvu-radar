@@ -323,4 +323,32 @@ class ImvuApi {
         }
         return null
     }
+
+    /** busca profunda: 1 salto a partir das pessoas que estao nas salas conhecidas */
+    fun deepScan(
+        targetCid: String,
+        peopleLimit: Int = 25,
+        roomsPer: Int = 25,
+        progress: ((String) -> Unit)? = null
+    ): Pair<String, List<Person>>? {
+        val cands = peopleInLists(listOf("friends", "explore", "recent", "feature"), peopleLimit)
+        progress?.invoke("pessoas candidatas: ${cands.size}")
+        var done = 0
+        for (person in cands) {
+            if (person.cid == targetCid) continue
+            for (n in 1..roomsPer) {
+                val rid = "${person.cid}-$n"
+                val meta = roomMeta(rid) ?: continue
+                val people = roster(rid)
+                if (people.any { it.cid == targetCid }) {
+                    progress?.invoke("achei em $rid")
+                    return Pair(rid, people)
+                }
+            }
+            done++
+            if (done % 5 == 0) progress?.invoke("varridas $done/${cands.size} pessoas")
+        }
+        progress?.invoke("terminou: $done pessoas, nao achado")
+        return null
+    }
 }
