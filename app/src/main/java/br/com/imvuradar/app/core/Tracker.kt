@@ -1,5 +1,6 @@
 package br.com.imvuradar.app.core
 
+import br.com.imvuradar.app.App
 import br.com.imvuradar.app.SecureStore
 import org.json.JSONArray
 import org.json.JSONObject
@@ -79,17 +80,17 @@ object Tracker {
         pool.submit {
             var tries = 0
             while (true) {
-                val cr = credentials ?: store.credentials() ?: run {
-                    Thread.sleep(10_000); tries++; continue
-                }
-                credentials = cr
-                if (api.login(cr.first, cr.second)) {
-                    reconnecting = false
-                    emit(JSONObject().put("type", "ready").put("imq", true))
-                    imq.connect(api.cid, api.sessionId)
-                    // reassina salas ja monitoradas
-                    imq.watchedRooms.forEach { imq.subscribe(it) }
-                    return@submit
+                var cr = credentials
+                if (cr == null) cr = store.credentials()
+                if (cr != null) {
+                    credentials = cr
+                    if (api.login(cr.first, cr.second)) {
+                        reconnecting = false
+                        emit(JSONObject().put("type", "ready").put("imq", true))
+                        imq.connect(api.cid, api.sessionId)
+                        imq.watchedRooms.forEach { imq.subscribe(it) }
+                        return@submit
+                    }
                 }
                 reconnecting = true
                 emit(JSONObject().put("type", "login_error").put("message", api.lastError))

@@ -3,6 +3,7 @@ package br.com.imvuradar.app.update
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.Signature
 import android.net.Uri
 import android.os.Build
 import androidx.core.content.FileProvider
@@ -43,12 +44,14 @@ object Updater {
             val pm = ctx.packageManager
             val info = pm.getPackageArchiveInfo(apk.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES)
                 ?: return false
-            val sigs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val sigs: Array<Signature>? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 val s = info.signingInfo ?: return false
                 if (s.hasMultipleSigners()) s.apkContentsSigners else s.signingCertificateHistory
             } else {
-                @Suppress("DEPRECATION") info.signatures
+                @Suppress("DEPRECATION")
+                info.signatures
             }
+            if (sigs == null || sigs.isEmpty()) return false
             val expected = CERT_SHA256.uppercase().replace(":", "")
             sigs.any { sig ->
                 val md = MessageDigest.getInstance("SHA-256")

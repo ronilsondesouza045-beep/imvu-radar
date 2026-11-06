@@ -85,9 +85,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun askBatteryExemption() {
         try {
-            val pm = packageManager
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                val dg = pm.getSystemService(android.os.PowerManager::class.java)
+                val dg = getSystemService(android.os.PowerManager::class.java)
                 if (dg != null && !dg.isIgnoringBatteryOptimizations(packageName)) {
                     startActivity(
                         Intent(
