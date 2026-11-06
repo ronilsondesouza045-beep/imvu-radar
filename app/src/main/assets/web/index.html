@@ -2,6 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8" />
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no" />
 <meta name="theme-color" content="#05070c" />
 <title>IMVU Radar</title>
@@ -34,7 +35,7 @@ padding:14px;font-weight:700;font-size:15px;cursor:pointer}
 button:active{transform:scale(.98)}
 button.ghost{background:transparent;border:1px solid var(--line2);color:var(--mut)}
 button.warn{background:linear-gradient(135deg,#ff9f43,#ff6b6b)}
-.row2{display:flex;gap:9px}.row2>*{flex:1}
+.row2{display:flex;gap:9px;flex-wrap:wrap}.row2>*{flex:1 1 45%;min-width:0;width:auto;white-space:normal;font-size:13.5px;padding:13px 6px}
 .tag{display:inline-flex;align-items:center;padding:3px 9px;border-radius:999px;font-size:10.5px;font-weight:800;letter-spacing:.5px;border:1px solid var(--line2)}
 .tag.on{color:var(--ok);border-color:rgba(46,230,168,.45);background:rgba(46,230,168,.1)}
 .tag.off{color:var(--bad);border-color:rgba(255,95,126,.4);background:rgba(255,95,126,.08)}
@@ -70,9 +71,12 @@ button.warn{background:linear-gradient(135deg,#ff9f43,#ff6b6b)}
 .line .a{font-size:9px;font-weight:800;padding:3px 7px;border-radius:6px}
 .a.in{color:var(--ok);background:rgba(46,230,168,.13)}.a.out{color:var(--bad);background:rgba(255,95,126,.13)}.a.upd{color:var(--mut);background:rgba(140,160,200,.13)}
 nav.bot{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;background:rgba(8,11,19,.96);
-backdrop-filter:blur(14px);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
-nav.bot button{flex:1;background:transparent;color:var(--mut);font-size:10px;padding:9px 2px;border-radius:0;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px}
-nav.bot button b{font-size:17px;font-weight:400}
+backdrop-filter:blur(14px);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom);
+overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+nav.bot::-webkit-scrollbar{display:none}
+nav.bot button{flex:1 1 0;min-width:0;background:transparent;color:var(--mut);font-size:9.5px;padding:9px 1px;border-radius:0;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px}
+nav.bot button b{font-size:16px;font-weight:400;line-height:1}
+nav.bot button span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 nav.bot button.on{color:var(--txt)}
 .modal{position:fixed;inset:0;z-index:40;background:rgba(3,5,10,.9);display:none;align-items:center;justify-content:center;padding:18px}
 .modal.on{display:flex}
@@ -99,13 +103,16 @@ nav.bot button.on{color:var(--txt)}
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const has = window.Radar ? true : false;
-let TAB = 'onde';
 const TABS=[['onde','🔎','Onde'],['sala','🏠','Sala'],['entrada','🚪','Entrar'],['movimento','🌀','Movim.'],['contatos','👥','Contatos'],['mais','⋯','Mais']];
+let TAB=(location.hash||'').replace('#','');
+if(!TABS.some(t=>t[0]===TAB)) TAB='onde';
 
 function renderNav(){
-  $('#nav').innerHTML=TABS.map(([id,ic,lb])=>`<button class="${TAB===id?'on':''}" onclick="go('${id}')"><b>${ic}</b>${lb}</button>`).join('');
+  $('#nav').innerHTML=TABS.map(([id,ic,lb])=>`<button class="${TAB===id?'on':''}" onclick="go('${id}')"><b>${ic}</b><span>${lb}</span></button>`).join('');
+  const on=document.querySelector('nav.bot button.on');
+  if(on && on.scrollIntoView) { try{ on.scrollIntoView({inline:'center',block:'nearest'}); }catch(_){} }
 }
-function go(id){ TAB=id; render(); }
+function go(id){ TAB=id; try{ location.hash=id; }catch(_){} render(); }
 function setBg(u){ $('#bg').style.backgroundImage = u? `url('${u}')`:''; }
 
 const V={
@@ -132,7 +139,7 @@ const V={
    <div class="card"><h1>Caça por sala</h1><p class="sub">alvo + dono da sala</p>
    <input id="tgt" placeholder="alvo (nick)" autocapitalize="off" autocorrect="off">
    <input id="own" placeholder="dono da sala" autocapitalize="off" autocorrect="off">
-   <div class="row2"><button onclick="act('scan')">Cçar</button><button class="ghost" onclick="act('deep')">Busca profunda</button></div><div id="out2"></div></div>
+   <div class="row2"><button onclick="act('scan')">Caçar</button><button class="ghost" onclick="act('deep')">Busca profunda</button></div><div id="out2"></div></div>
    <div class="card"><h1>Ajustes</h1><p class="sub">conexão e atualização</p>
    <button class="ghost" onclick="act('status')">Ver status</button>
    <div class="row2" style="margin-top:9px"><button onclick="act('update')">Verificar atualização</button></div><div id="out3"></div></div>`
