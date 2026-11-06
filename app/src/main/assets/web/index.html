@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no" />
+<meta name="theme-color" content="#05070c" />
+<title>IMVU Radar</title>
+<style>
+:root{--bg:#05070c;--panel:rgba(14,19,32,.88);--panel2:rgba(22,29,47,.6);--line:rgba(130,170,255,.14);
+--line2:rgba(130,170,255,.3);--txt:#e9eefb;--mut:#8b9cc2;--acc:#7c5cff;--acc2:#21d4fd;--ok:#2ee6a8;--warn:#ffc857;--bad:#ff5f7e;--priv:#ffb347}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body{overscroll-behavior:none}
+.bg{position:fixed;inset:0;z-index:0;background-size:cover;background-position:center;filter:saturate(1.1) blur(3px);opacity:.35}
+.bg::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,7,12,.86),rgba(5,7,12,.97))}
+.top{position:fixed;top:0;left:0;right:0;z-index:20;display:flex;align-items:center;gap:10px;
+padding:calc(env(safe-area-inset-top) + 10px) 14px 10px;background:linear-gradient(180deg,rgba(6,9,16,.95),rgba(6,9,16,.55));backdrop-filter:blur(12px)}
+.brand{font-weight:800;letter-spacing:.4px;font-size:15px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 12px var(--ok);display:inline-block}
+.dot.off{background:var(--bad);box-shadow:0 0 12px var(--bad)}
+.dot.wait{background:var(--warn);box-shadow:0 0 12px var(--warn)}
+.top .sp{flex:1}
+.iconbtn{background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--txt);width:38px;height:38px;border-radius:11px;font-size:16px}
+main{position:relative;z-index:1;padding:74px 14px calc(env(safe-area-inset-bottom) + 78px)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:14px;backdrop-filter:blur(10px)}
+h1{font-size:21px;margin:0 0 4px}
+h2{font-size:12.5px;letter-spacing:.7px;text-transform:uppercase;color:#d6e0ff;margin:18px 0 10px}
+.sub{color:var(--mut);font-size:13px;margin:0 0 14px}
+input,select{width:100%;background:#070b14;border:1px solid var(--line2);border-radius:12px;color:var(--txt);
+padding:13px 14px;font-size:15px;outline:none;margin-bottom:10px}
+input:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(124,92,255,.18)}
+button{width:100%;background:linear-gradient(135deg,var(--acc),#3f7dff);border:0;border-radius:12px;color:#fff;
+padding:14px;font-weight:700;font-size:15px;cursor:pointer}
+button:active{transform:scale(.98)}
+button.ghost{background:transparent;border:1px solid var(--line2);color:var(--mut)}
+button.warn{background:linear-gradient(135deg,#ff9f43,#ff6b6b)}
+.row2{display:flex;gap:9px}.row2>*{flex:1}
+.tag{display:inline-flex;align-items:center;padding:3px 9px;border-radius:999px;font-size:10.5px;font-weight:800;letter-spacing:.5px;border:1px solid var(--line2)}
+.tag.on{color:var(--ok);border-color:rgba(46,230,168,.45);background:rgba(46,230,168,.1)}
+.tag.off{color:var(--bad);border-color:rgba(255,95,126,.4);background:rgba(255,95,126,.08)}
+.tag.priv{color:var(--priv);border-color:rgba(255,179,71,.45);background:rgba(255,179,71,.1)}
+.tag.pub{color:var(--mut)}
+.tag.vip{color:#ffd36e;border-color:rgba(255,211,110,.45)}
+.empty{color:var(--mut);font-size:13px;padding:12px 2px}
+.bar{height:4px;border-radius:99px;background:rgba(130,170,255,.14);overflow:hidden;margin:8px 0}
+.bar i{display:block;height:100%;width:30%;background:linear-gradient(90deg,var(--acc),var(--acc2));animation:sl 1.1s infinite linear}
+@keyframes sl{0%{margin-left:-30%}100%{margin-left:100%}}
+.mono{font-family:ui-monospace,Menlo,monospace}
+.muted{color:var(--mut)}
+.hero{display:flex;gap:14px;align-items:center}
+.hero img.pic{width:96px;height:126px;object-fit:contain;filter:drop-shadow(0 10px 18px rgba(0,0,0,.8))}
+.hero img.photo{width:58px;height:72px;object-fit:cover;border-radius:9px;border:1.5px solid rgba(255,255,255,.15);margin-left:-38px;margin-top:52px}
+.nm{font-size:19px;font-weight:800}
+.badges{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.people{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:9px}
+.ptile{border-radius:12px;overflow:hidden;border:1px solid var(--line);background:var(--panel2);text-align:center}
+.ptile img{width:100%;height:112px;object-fit:cover;display:block}
+.ptile .n{font-size:10.5px;font-weight:700;padding:5px 4px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ptile .c{font-size:9.5px;color:var(--mut);font-family:ui-monospace,monospace;padding-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.roomcover{position:relative;border-radius:13px;overflow:hidden;border:1px solid var(--line);margin-bottom:12px}
+.roomcover img{width:100%;height:170px;object-fit:cover;display:block}
+.roomcover .ov{position:absolute;inset:auto 0 0 0;padding:9px 11px;background:linear-gradient(0deg,rgba(6,9,16,.96),transparent)}
+.rm{font-weight:800;font-size:16px}
+.list{max-height:52vh;overflow-y:auto}
+.line{display:flex;gap:9px;align-items:center;padding:8px;border-left:2px solid var(--line2);margin-bottom:7px;background:var(--panel2);border-radius:0 11px 11px 0}
+.line img{width:32px;height:42px;object-fit:cover;border-radius:7px;border:1px solid var(--line)}
+.line .i{flex:1;min-width:0}
+.line .n{font-size:13px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.line .t{font-size:9.5px;color:var(--mut);font-family:ui-monospace,monospace}
+.line .a{font-size:9px;font-weight:800;padding:3px 7px;border-radius:6px}
+.a.in{color:var(--ok);background:rgba(46,230,168,.13)}.a.out{color:var(--bad);background:rgba(255,95,126,.13)}.a.upd{color:var(--mut);background:rgba(140,160,200,.13)}
+nav.bot{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;background:rgba(8,11,19,.96);
+backdrop-filter:blur(14px);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav.bot button{flex:1;background:transparent;color:var(--mut);font-size:10px;padding:9px 2px;border-radius:0;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px}
+nav.bot button b{font-size:17px;font-weight:400}
+nav.bot button.on{color:var(--txt)}
+.modal{position:fixed;inset:0;z-index:40;background:rgba(3,5,10,.9);display:none;align-items:center;justify-content:center;padding:18px}
+.modal.on{display:flex}
+.sheet{background:linear-gradient(180deg,#131b2e,#090d17);border:1px solid var(--line2);border-radius:18px;padding:18px;max-width:520px;width:100%;max-height:88vh;overflow:auto}
+.sheet img{width:100%;border-radius:12px;margin-top:10px;background:#060a11}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.chip{border:1px solid var(--line);background:var(--panel2);border-radius:8px;padding:4px 8px;font-size:11px}
+</style>
+</head>
+<body>
+<div class="bg" id="bg"></div>
+<div class="top">
+  <span class="dot" id="dot"></span>
+  <span class="brand">IMVU Radar</span>
+  <span class="sp"></span>
+  <button class="iconbtn" onclick="go('ajustes')">⚙</button>
+</div>
+<main id="app"></main>
+<nav class="bot" id="nav"></nav>
+
+<div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const has = window.Radar ? true : false;
+let TAB = 'onde';
+const TABS=[['onde','🔎','Onde'],['sala','🏠','Sala'],['entrada','🚪','Entrar'],['movimento','🌀','Movim.'],['contatos','👥','Contatos'],['mais','⋯','Mais']];
+
+function renderNav(){
+  $('#nav').innerHTML=TABS.map(([id,ic,lb])=>`<button class="${TAB===id?'on':''}" onclick="go('${id}')"><b>${ic}</b>${lb}</button>`).join('');
+}
+function go(id){ TAB=id; render(); }
+function setBg(u){ $('#bg').style.backgroundImage = u? `url('${u}')`:''; }
+
+const V={
+ onde:()=>`<div class="card"><h1>Onde está</h1><p class="sub">descobre a sala atual e quem está dentro</p>
+   <input id="nick" placeholder="nick / avatar" autocapitalize="off" autocorrect="off">
+   <button onclick="act('where')">Rastrear</button><div id="out"></div></div>`,
+ sala:()=>`<div class="card"><h1>Sala</h1><p class="sub">roomId - render da sala e quem está dentro</p>
+   <input id="rid" placeholder="roomId" autocapitalize="off" autocorrect="off"><button onclick="act('room')">Abrir</button><div id="out"></div></div>`,
+ entrada:()=>`<div class="card"><h1>Força entrada</h1><p class="sub">entra na sala como participante e vigia o movimento</p>
+   <input id="rid" placeholder="roomId" autocapitalize="off" autocorrect="off">
+   <button class="warn" onclick="act('enter')">Forçar entrada</button>
+   <div class="row2" style="margin-top:9px"><button class="ghost" onclick="act('leave')">Sair</button></div><div id="out"></div></div>`,
+ movimento:()=>`<div class="card"><h1>Movimento</h1><p class="sub">quem entra e sai, em tempo real</p>
+   <input id="rid" placeholder="roomId" autocapitalize="off" autocorrect="off">
+   <button onclick="act('room')">Monitorar</button>
+   <div class="row2" style="margin-top:9px"><button class="ghost" onclick="document.getElementById('out').innerHTML=''">Limpar</button></div>
+   <div id="out" class="list" style="margin-top:12px"></div></div>`,
+ contatos:()=>`<div class="card"><h1>Contatos</h1><p class="sub">suas conexões e onde cada uma está</p>
+   <button onclick="act('friends')">Carregar</button><div id="out" style="margin-top:12px"></div></div>`,
+ mais:()=>`<div class="card"><h1>Vigia</h1><p class="sub">avisa quando o alvo troca de sala</p>
+   <input id="nick" placeholder="nick" autocapitalize="off" autocorrect="off">
+   <input id="int" type="number" value="15" style="margin-bottom:10px">
+   <button onclick="act('vigia')">Vigiar</button><div id="out"></div></div>
+   <div class="card"><h1>Caça por sala</h1><p class="sub">alvo + dono da sala</p>
+   <input id="tgt" placeholder="alvo (nick)" autocapitalize="off" autocorrect="off">
+   <input id="own" placeholder="dono da sala" autocapitalize="off" autocorrect="off">
+   <div class="row2"><button onclick="act('scan')">Cçar</button><button class="ghost" onclick="act('deep')">Busca profunda</button></div><div id="out2"></div></div>
+   <div class="card"><h1>Ajustes</h1><p class="sub">conexão e atualização</p>
+   <button class="ghost" onclick="act('status')">Ver status</button>
+   <div class="row2" style="margin-top:9px"><button onclick="act('update')">Verificar atualização</button></div><div id="out3"></div></div>`
+};
+
+function render(){
+  renderNav();
+  $('#app').innerHTML = V[TAB]();
+  if(TAB==='onde'){ const n=$('#nick'); if(n) n.value=lastNick||''; }
+}
+function out(id){ return document.getElementById(id||'out'); }
+function load(msg,id){ const o=out(id); if(o) o.innerHTML='<div class="bar"><i></i></div><div class="muted">'+esc(msg)+'</div>'; }
+
+let lastNick='';
+function act(a){
+  if(a==='where'){ lastNick=$('#nick').value.trim(); load('rastreando…'); Radar.where(lastNick); }
+  else if(a==='room'){ const rid=$('#rid').value.trim(); load('abrindo…'); Radar.room(rid); }
+  else if(a==='enter'){ const rid=$('#rid').value.trim(); load('forcando entrada…'); Radar.enter(rid); }
+  else if(a==='leave'){ const rid=$('#rid').value.trim(); load('saindo…'); Radar.leave(rid); }
+  else if(a==='friends'){ load('carregando…'); Radar.friends(); }
+  else if(a==='vigia'){ const n=$('#nick').value.trim(); load('vigia ligada: '+n); Radar.watchTarget(n); }
+  else if(a==='scan'){ load('varredura…','out2'); Radar.scan($('#tgt').value.trim(), $('#own').value.trim(), 250); }
+  else if(a==='deep'){ load('busca profunda…','out2'); Radar.deepScan($('#tgt').value.trim(), 40, 40); }
+  else if(a==='status'){ load('status…','out3'); setTimeout(()=>{ const s=Radar.status(); const o=out('out3'); if(o) o.innerHTML='<div class="kv" style="font-size:13px">conectado: '+(s.loggedIn?'sim':'nao')+'<br>canal ao vivo: '+(s.imq?'ativo':'reconectando')+'<br>salas monitoradas: '+s.monitored+'</div>'; },50); }
+  else if(a==='update'){ load('consultando…','out3'); Radar.checkUpdate(); }
+}
+
+function tagRoom(p){ return p==='private'?'<span class="tag priv">PRIVADA</span>':'<span class="tag pub">PUBLICA</span>'; }
+function peopleGrid(list,empty){
+  if(!list||!list.length) return '<div class="empty">'+(empty||'ninguem visivel')+'</div>';
+  return '<div class="people">'+list.map(p=>`<div class="ptile" onclick="ficha('${esc(p.cid)}','${esc(p.username)}','${esc(p.display_name)}','${esc(p.render||'')}','${esc(p.avatar||'')}')">
+   <img loading="lazy" src="${esc(p.avatar||p.render||'')}"/><div class="n">${esc(p.display_name||p.username)}</div><div class="c">${esc(p.username)}</div></div>`).join('')+'</div>';
+}
+function ficha(cid,user,name,render,photo){
+  $('#sheet').innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">'+esc(name||user)+'</h3><button class="iconbtn" onclick="document.getElementById(\'modal\').classList.remove(\'on\')">✕</button></div>'+
+   '<div class="muted mono" style="font-size:12px">'+esc(user)+' · cid '+esc(cid)+'</div>'+
+   '<img src="'+esc(photo||render)+'"><div class="muted" style="font-size:11px;margin-top:6px">foto no jogo</div>'+
+   '<img src="'+esc(render)+'"><div class="muted" style="font-size:11px;margin-top:6px">avatar 3D</div>';
+  $('#modal').classList.add('on');
+}
+
+window.__radarEvent = function(e){
+  const t=e.type;
+  if(t==='ready'){ $('#dot').className='dot'; }
+  else if(t==='login_error'){ $('#dot').className='dot wait'; showLogin(e.message); }
+  else if(t==='imq_error'){ $('#dot').className='dot wait'; }
+  else if(t==='where'){
+    const d=e.data||{}, p=d.profile||{}, room=(d.room&&d.room.roomId)?d.room:null, people=d.people||[];
+    if(room&&room.render) setBg(room.render);
+    const o=out();
+    if(o){
+      o.innerHTML='<div class="hero" style="margin-top:16px"><div style="position:relative"><img class="pic" src="'+esc(p.render||p.avatar)+'">'+(p.avatar?'<img class="photo" src="'+esc(p.avatar)+'">':'')+'</div>'+
+      '<div style="min-width:0"><div class="nm">'+esc(p.display_name||p.username)+'</div>'+
+      '<div class="muted mono" style="font-size:12px">'+esc(p.username)+' · cid '+esc(p.cid)+'</div>'+
+      '<div class="badges"><span class="tag '+(p.online?'on':'off')+'">'+(p.online?'ONLINE':'OFFLINE')+'</span>'+(p.is_vip?'<span class="tag vip">VIP</span>':'')+(p.is_ap?'<span class="tag vip">AP</span>':'')+(room?tagRoom(room.privacy):'')+'</div>'+
+      (room?'<div class="rm">'+esc(room.name)+'</div><div class="muted mono" style="font-size:12px">['+esc(room.roomId)+'] · '+(room.occupancy||'?')+'/'+(room.capacity||'?')+(room.owner?' · dono '+esc(room.owner):'')+'</div>':'')+
+      '</div></div>'+
+      (room?'':'<div class="card" style="margin-top:12px;background:rgba(255,95,126,.07);border-color:rgba(255,95,126,.3)"><b style="color:#ff8fa3">OFFLINE no IMVU</b><p class="sub" style="margin:8px 0 10px">Ele não é amigo da sua conta, então não aparece nas listas. Dá pra caçar mesmo assim:</p><div class="row2"><button class="warn" onclick="act2(\'deep\')">Busca profunda</button><button onclick="act2(\'watch\')">Alerta ao vivo</button></div><div id="deepBox" class="muted" style="font-size:12.5px;margin-top:10px"></div></div>')+
+      (room?'<h2>Dentro ('+people.length+')</h2>'+peopleGrid(people):'');
+    }
+  }
+  else if(t==='room'){
+    const meta=e.meta||{}, people=e.people||[];
+    if(meta.render) setBg(meta.render);
+    const o=out();
+    if(o) o.innerHTML='<div class="roomcover"><img src="'+esc(meta.render)+'"><div class="ov"><div class="rm">'+esc(meta.name)+'</div><div class="muted mono" style="font-size:11.5px">['+esc(e.rid)+'] '+esc(meta.privacy||'')+' · '+(meta.occupancy||'?')+'/'+(meta.capacity||'?')+'</div></div></div>'+
+      '<h2>Dentro ('+people.length+')</h2>'+peopleGrid(people);
+  }
+  else if(t==='enter'){
+    const o=out();
+    if(o){
+      if(e.ok){ o.innerHTML='<div class="tag on">DENTRO DA SALA</div>'+(e.meta&&e.meta.render?'<div class="roomcover" style="margin-top:12px"><img src="'+esc(e.meta.render)+'"></div>':'')+peopleGrid(e.people||[]); if(e.meta&&e.meta.render) setBg(e.meta.render); }
+      else { o.innerHTML='<div class="tag off">ENTRADA NEGADA</div><div class="muted" style="margin-top:8px;font-size:13px">'+esc(e.reason)+' — sala cheia exige o dono</div>'; }
+    }
+  }
+  else if(t==='leave'){ const o=out(); if(o) o.innerHTML='<div class="empty">saiu da sala</div>'; }
+  else if(t==='friends'){
+    const fl=e.data||[]; const o=out();
+    if(o) o.innerHTML = fl.length? fl.map(f=>`<div class="line" style="margin-bottom:8px"><img src="${esc(f.avatar||f.render)}"><div class="i"><div class="n">${esc(f.display_name||f.username)}</div><div class="t">${esc(f.username)} · ${esc(f.room&&f.room.name?f.room.name:'-')}</div></div><span class="tag ${f.online?'on':'off'}">${f.online?'on':'off'}</span></div>`).join('') : '<div class="empty">sem conexoes</div>';
+  }
+  else if(t==='movement'){
+    const o=document.getElementById('out');
+    if(o&&TAB==='movimento'){
+      const act=e.action==='created'?'in':(e.action==='deleted'?'out':'upd');
+      const lb=act==='in'?'ENTROU':(act==='out'?'SAIU':'MUDOU');
+      const row=document.createElement('div');
+      row.className='line'; row.dataset.k=e.room+'|'+e.cid;
+      row.innerHTML='<img src=""><div class="i"><div class="n">cid '+esc(e.cid)+'</div><div class="t">'+esc(e.room)+' · '+new Date().toLocaleTimeString('pt-BR')+'</div></div><span class="a '+act+'">'+lb+'</span>';
+      o.prepend(row);
+      while(o.querySelectorAll('.line').length>60) o.querySelectorAll('.line')[o.querySelectorAll('.line').length-1].remove();
+    }
+  }
+  else if(t==='person'){
+    const p=e.person||{};
+    document.querySelectorAll('.line').forEach(r=>{ if(r.dataset.k&&r.dataset.k.endsWith('|'+e.cid)){ r.querySelector('.n').textContent=p.display_name||p.username||e.cid; if(p.avatar){const im=r.querySelector('img'); if(im&&!im.getAttribute('src')) im.src=p.avatar;} } });
+  }
+  else if(t==='deep_start'){ const b=document.getElementById('deepBox'); if(b) b.innerHTML='<div class="bar"><i></i></div><div class="muted">buscando…</div>'; }
+  else if(t==='deep_progress'){ const b=document.getElementById('deepBox'); if(b) b.innerHTML='<div class="bar"><i></i></div><div class="muted">'+esc(e.msg)+'</div>'; }
+  else if(t==='deep_hit'){ const b=document.getElementById('deepBox'); if(b){ b.innerHTML='<div class="tag on">ACHEI</div>'+peopleGrid(e.people||[]); if(e.meta&&e.meta.render) setBg(e.meta.render);} }
+  else if(t==='deep_done'){ const b=document.getElementById('deepBox'); if(b) b.innerHTML='<div class="empty">'+esc(e.error||('terminou ('+(e.scanned||0)+' varridas)'))+'</div>'; }
+  else if(t==='alert'){ const b=document.getElementById('deepBox'); if(b) b.innerHTML='<div class="tag on">ALERTA: '+esc((e.person&&e.person.username)||e.nick)+' '+(e.action==='created'?'ENTROU':(e.action==='deleted'?'SAIU':'mudou'))+' na sala '+esc(e.room)+'</div>'; }
+  else if(t==='scan_start'){ load('varredura…','out2'); }
+  else if(t==='scan_progress'){ load(e.msg,'out2'); }
+  else if(t==='scan_hit'){ const o=out('out2'); if(o){ if(e.meta&&e.meta.render) setBg(e.meta.render); o.innerHTML='<div class="tag on">ACHEI</div>'+peopleGrid(e.people||[]);} }
+  else if(t==='scan_done'){ load('terminou: '+(e.error||'alvo nao achado'),'out2'); }
+  else if(t==='update'){
+    const d=e.data||{}; const o=out('out3');
+    if(o){
+      if(d.update){ o.innerHTML='<div class="tag on">ATUALIZAÇÃO DISPONÍVEL</div><div class="muted" style="margin:8px 0;font-size:13px">versão '+esc(d.versionCode)+'</div><button onclick="Radar.installUpdate(\''+esc(d.url)+'\')">Baixar e instalar</button>'; }
+      else if(d.ok){ o.innerHTML='<div class="muted" style="font-size:13px">vc ja esta na ultima versão</div>'; }
+      else { o.innerHTML='<div class="muted" style="font-size:13px">sem news: '+esc(d.error||'')+'</div>'; }
+    }
+  }
+};
+
+function act2(kind){
+  const nick=lastNick||'';
+  if(kind==='deep'){ const b=document.getElementById('deepBox'); if(b) b.innerHTML='<div class="bar"><i></i></div>'; Radar.deepScan(nick,40,40); }
+  else if(kind==='watch'){ const b=document.getElementById('deepBox'); if(b) b.innerHTML='<div class="tag on">ALERTA AO VIVO LIGADO</div>'; Radar.watchTarget(nick); }
+}
+
+function showLogin(msg){
+  const b=document.getElementById('deepBox')||document.createElement('div');
+  document.getElementById('modal').classList.add('on');
+  $('#sheet').innerHTML='<h3 style="margin:0 0 4px">Conectar</h3><div class="muted" style="font-size:13px;margin-bottom:12px">'+esc(msg||'informe a conta e a senha da sua conta IMVU (ficam cifradas no aparelho)')+'</div>'+
+   '<input id="u" placeholder="avatar / e-mail" autocapitalize="off" autocorrect="off">'+
+   '<input id="p" type="password" placeholder="senha">'+
+   '<button onclick="Radar.setCredentials(document.getElementById(\'u\').value.trim(),document.getElementById(\'p\').value);document.getElementById(\'modal\').classList.remove(\'on\')">Conectar</button>';
+}
+
+render();
+setInterval(()=>{
+  if(!window.Radar) return;
+  const s=Radar.status();
+  const d=$('#dot');
+  if(s.loggedIn && s.imq) d.className='dot';
+  else if(s.reconnecting) d.className='dot wait';
+  else d.className='dot off';
+}, 4000);
+if(window.Radar && !Radar.hasCredentials()) showLogin();
+else if(window.Radar) Radar.friends();
+</script>
+</body>
+</html>

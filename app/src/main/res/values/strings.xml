@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">IMVU Radar</string>
+    <string name="notif_channel">monitoramento</string>
+    <string name="notif_title">Radar ativo</string>
+</resources>
