@@ -44,12 +44,16 @@ jobs:
           path: app/build/outputs/apk/release/app-release.apk
           retention-days: 90
 
+      - name: Ler versionCode do app
+        id: ver
+        run: echo "code=$(grep -oE 'versionCode = [0-9]+' app/build.gradle.kts | grep -oE '[0-9]+' | head -1)" >> $GITHUB_OUTPUT
+
       - name: Publish release (tag only)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: app/build/outputs/apk/release/app-release.apk
-          name: IMVURadar-${{ github.run_number }}.apk
+          name: IMVURadar-${{ steps.ver.outputs.code }}.apk
           body: |
             Atualização automática do IMVU Radar.
             O app verifica esta release e instala a versão nova.
