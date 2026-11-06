@@ -133,9 +133,19 @@ object Tracker {
                 emit(JSONObject().put("type", "where").put("nick", nick).put("error", "nick nao encontrado"))
                 return@submit
             }
-            // FASE 1 (rapida): listas oficiais do IMVU - pode achar varias salas
-            val hits = api.findAllRoomsFor(p.cid, listOf("friends", "explore", "recent", "feature")).toMutableList()
-            emitWhere(p, hits)
+            // FASE 1 (rapida, com emissao progressiva): listas do IMVU, prioridadeFriends -> recent -> explore
+            val hits = mutableListOf<Pair<String, List<Person>>>()
+            val deadline = System.currentTimeMillis() + 25_000
+            api.findAllRoomsFor(
+                p.cid,
+                listOf("friends", "recent", "explore"),
+                onHit = { rid, people ->
+                    hits.add(Pair(rid, people))
+                    emitWhere(p, hits.toList())
+                },
+                deadlineMs = deadline
+            )
+            emitWhere(p, hits.toList())
 
             // FASE 2 (background): salas PROPRIAS do alvo + busca funda
             pool.submit {
@@ -143,13 +153,13 @@ object Tracker {
                     val own = api.findAllInOwnRooms(p.cid, 120)
                     val known = hits.map { it.first }.toMutableSet()
                     own.forEach { if (known.add(it.first)) hits.add(it) }
-                    emitWhere(p, hits)
+                    emitWhere(p, hits.toList())
 
                     if (hits.isEmpty()) {
                         val deep = api.deepScan(p.cid, 25, 25, null)
                         val known2 = hits.map { it.first }.toMutableSet()
                         deep.forEach { if (known2.add(it.first)) hits.add(it) }
-                        if (deep.isNotEmpty()) emitWhere(p, hits)
+                        if (deep.isNotEmpty()) emitWhere(p, hits.toList())
                     }
                 } catch (e: Exception) {
                     android.util.Log.e("IMVURadar", "fase2: ${e.message}")

@@ -327,15 +327,21 @@ class ImvuApi {
     /**acha em quais salas o cid esta - TODAS (a pessoa pode estar em varias ao mesmo tempo) */
     fun findAllRoomsFor(
         targetCid: String,
-        listIds: List<String> = listOf("friends", "explore", "recent", "feature")
+        listIds: List<String> = listOf("friends", "explore", "recent", "feature"),
+        onHit: ((String, List<Person>) -> Unit)? = null,
+        deadlineMs: Long = 0
     ): List<Pair<String, List<Person>>> {
         val out = mutableListOf<Pair<String, List<Person>>>()
         val seen = mutableSetOf<String>()
         for (lid in listIds) {
             for (rid in roomListRooms(lid)) {
+                if (deadlineMs > 0 && System.currentTimeMillis() > deadlineMs) return out
                 if (!seen.add(rid)) continue
                 val people = roster(rid)
-                if (people.any { it.cid == targetCid }) out.add(Pair(rid, people))
+                if (people.any { it.cid == targetCid }) {
+                    out.add(Pair(rid, people))
+                    onHit?.invoke(rid, people)
+                }
             }
         }
         return out
