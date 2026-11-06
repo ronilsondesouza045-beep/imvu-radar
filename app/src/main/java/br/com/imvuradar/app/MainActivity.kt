@@ -123,6 +123,29 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun status(): String = Tracker.status().toString()
 
+        /** render do IMVU com sessao -> data URI (imagens do imvu pedem login) */
+        @JavascriptInterface
+        fun fetchImage(url: String, cb: String) {
+            if (url.isBlank()) return
+            Thread {
+                val data = try {
+                    val bytes = Tracker.api.authGetBytes(url)
+                    if (bytes == null) "" else "data:image/png;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                } catch (e: Exception) {
+                    ""
+                }
+                runOnUiThread {
+                    try {
+                        web.evaluateJavascript(
+                            "window.__radarImage && window.__radarImage('${cb.replace("'", "")}','${data}')",
+                            null
+                        )
+                    } catch (_: Exception) {
+                    }
+                }
+            }.start()
+        }
+
         @JavascriptInterface
         fun hasCredentials(): String = Tracker.hasCredentials().toString()
 

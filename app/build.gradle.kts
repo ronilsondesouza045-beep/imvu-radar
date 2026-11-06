@@ -11,8 +11,8 @@ android {
         applicationId = "br.com.imvuradar.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 11
-        versionName = "1.0.11"
+        versionCode = 12
+        versionName = "1.0.12"
         resourceConfigurations += listOf("pt", "en")
     }
 

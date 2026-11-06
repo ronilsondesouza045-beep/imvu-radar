@@ -155,6 +155,20 @@ class ImvuApi {
         return true
     }
 
+    /** GET autenticado devolvendo bytes (renders do IMVU exigem sessao) */
+    fun authGetBytes(url: String): ByteArray? {
+        return try {
+            val b = Request.Builder().url(url)
+            b.header("User-Agent", Config.UA)
+            b.header("Origin", "https://www.imvu.com")
+            b.header("Referer", "https://www.imvu.com/")
+            if (cookies.isNotEmpty()) b.header("Cookie", cookieHeader())
+            http.newCall(b.build()).execute().use { resp -> resp.body?.bytes() }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     // ---------------- usuarios ----------------
     fun resolve(nick: String): Person? {
         val env = getJson("/user?username=" + java.net.URLEncoder.encode(nick, "UTF-8")) ?: return null
