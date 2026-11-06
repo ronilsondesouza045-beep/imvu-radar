@@ -346,25 +346,37 @@ class ImvuApi {
     fun myRooms(): List<Pair<String, List<Person>>> {
         val j = getJson("/user/user-$cid") ?: return emptyList()
         val rel = HashMap<String, String>()
-        for (v in j.optJSONObject("denormalized")?.values() ?: emptyList<JSONObject>()) {
-            val r = v.optJSONObject("relations") ?: continue
-            val keys = r.keys()
-            while (keys.hasNext()) {
-                val k = keys.next()
-                rel[k] = r.optString(k)
+        val den = j.optJSONObject("denormalized")
+        if (den != null) {
+            val nk = den.keys()
+            while (nk.hasNext()) {
+                val v = den.optJSONObject(nk.next()) ?: continue
+                val r = v.optJSONObject("relations") ?: continue
+                val rk = r.keys()
+                while (rk.hasNext()) {
+                    val k = rk.next()
+                    rel[k] = r.optString(k)
+                }
             }
         }
         val ids = LinkedHashSet<String>()
         for (k in listOf("default_room", "photo_booth_room")) {
-            rel[k]?.let { if (it.contains("/room/room-")) ids.add(it.substringAfterLast("/room/room-")) }
+            val u = rel[k]
+            if (u != null && u.contains("/room/room-")) ids.add(u.substringAfterLast("/room/room-"))
         }
-        rel["recent_rooms"]?.let {
-            val rr = getJson(it.replace(API, ""))
-            for (v in rr?.optJSONObject("denormalized")?.values() ?: emptyList<JSONObject>()) {
-                val items = v.optJSONObject("data")?.optJSONArray("items") ?: continue
-                for (i in 0 until items.length()) {
-                    val rid = items.getString(i).substringAfterLast("/room/room-")
-                    if (rid.isNotEmpty()) ids.add(rid)
+        val recent = rel["recent_rooms"]
+        if (recent != null) {
+            val rr = getJson(recent.replace(Config.API, ""))
+            val d2 = rr?.optJSONObject("denormalized")
+            if (d2 != null) {
+                val nk2 = d2.keys()
+                while (nk2.hasNext()) {
+                    val v = d2.optJSONObject(nk2.next()) ?: continue
+                    val items = v.optJSONObject("data")?.optJSONArray("items") ?: continue
+                    for (i in 0 until items.length()) {
+                        val rid = items.getString(i).substringAfterLast("/room/room-")
+                        if (rid.isNotEmpty()) ids.add(rid)
+                    }
                 }
             }
         }
