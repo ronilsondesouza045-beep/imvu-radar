@@ -121,6 +121,12 @@ class MainActivity : AppCompatActivity() {
     inner class Bridge {
 
         @JavascriptInterface
+        fun myRoom(): String {
+            Tracker.myRoom()
+            return "queued"
+        }
+
+        @JavascriptInterface
         fun hunt(target: String, owners: String, maxn: String): String {
             Tracker.privateHunt(target, owners, maxn.toIntOrNull() ?: 400)
             return "queued"

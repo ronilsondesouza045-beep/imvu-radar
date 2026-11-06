@@ -222,6 +222,25 @@ object Tracker {
         }
     }
 
+    /** MINHA SALA: as salas da conta conectada (so visivel com a propria conta) */
+    fun myRoom() {
+        pool.submit {
+            val rooms = api.myRooms()
+            val arr = org.json.JSONArray()
+            for (r in rooms) {
+                val meta = api.roomJson(r.first)
+                meta.put("people", r.second.size)
+                val people = org.json.JSONArray()
+                for (p in r.second) people.put(personJson(p))
+                val o = org.json.JSONObject()
+                    .put("meta", meta)
+                    .put("people", people)
+                arr.put(o)
+            }
+            emit(JSONObject().put("type", "myroom").put("data", arr))
+        }
+    }
+
     fun where(nick: String) {
         pool.submit {
             val p = api.resolve(nick)

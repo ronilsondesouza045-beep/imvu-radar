@@ -339,6 +339,43 @@ class ImvuApi {
         return null
     }
 
+    /**
+     * MINHAS SALAS: so funciona com a PROPRIA conta (as relations default_room /
+     * recent_rooms de outra pessoa sao 403). Mostra quem esta na sua sala pessoal.
+     */
+    fun myRooms(): List<Pair<String, List<Person>>> {
+        val j = getJson("/user/user-$cid") ?: return emptyList()
+        val rel = HashMap<String, String>()
+        for (v in j.optJSONObject("denormalized")?.values() ?: emptyList<JSONObject>()) {
+            val r = v.optJSONObject("relations") ?: continue
+            val keys = r.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                rel[k] = r.optString(k)
+            }
+        }
+        val ids = LinkedHashSet<String>()
+        for (k in listOf("default_room", "photo_booth_room")) {
+            rel[k]?.let { if (it.contains("/room/room-")) ids.add(it.substringAfterLast("/room/room-")) }
+        }
+        rel["recent_rooms"]?.let {
+            val rr = getJson(it.replace(API, ""))
+            for (v in rr?.optJSONObject("denormalized")?.values() ?: emptyList<JSONObject>()) {
+                val items = v.optJSONObject("data")?.optJSONArray("items") ?: continue
+                for (i in 0 until items.length()) {
+                    val rid = items.getString(i).substringAfterLast("/room/room-")
+                    if (rid.isNotEmpty()) ids.add(rid)
+                }
+            }
+        }
+        val out = mutableListOf<Pair<String, List<Person>>>()
+        for (rid in ids.take(12)) {
+            val people = roster(rid)
+            if (people.isNotEmpty()) out.add(Pair(rid, people))
+        }
+        return out
+    }
+
     /**acha em quais salas o cid esta - TODAS (a pessoa pode estar em varias ao mesmo tempo) */
     /**
      * Varre <cid>-1..<cid>-maxn e devolve as salas OCUPADAS do dono.
