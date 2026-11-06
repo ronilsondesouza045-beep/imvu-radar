@@ -133,8 +133,9 @@ const V={
  onde:()=>`<div class="card"><h1>Onde está</h1><p class="sub">descobre a sala atual e quem está dentro</p>
    <input id="nick" placeholder="nick / avatar" autocapitalize="off" autocorrect="off">
    <button onclick="act('where')">Rastrear</button><div id="out"></div></div>`,
- sala:()=>`<div class="card"><h1>Sala</h1><p class="sub">roomId - render da sala e quem está dentro</p>
-   <input id="rid" placeholder="roomId" autocapitalize="off" autocorrect="off"><button onclick="act('room')">Abrir</button><div id="out"></div></div>`,
+  sala:()=>`<div class="card"><h1>Sala</h1><p class="sub">roomId - render da sala e quem está dentro</p>
+   <input id="rid" placeholder="roomId" autocapitalize="off" autocorrect="off"><button onclick="act('room')">Abrir</button>
+   <div class="row2" style="margin-top:9px"><button class="ghost" onclick="abrirWeb()">Abrir dentro do app (WebView + login)</button></div><div id="out"></div></div>`,
  entrada:()=>`<div class="card"><h1>Força entrada</h1><p class="sub">entra na sala como participante e vigia o movimento</p>
    <input id="rid" placeholder="roomId" autocapitalize="off" autocorrect="off">
    <button class="warn" onclick="act('enter')">Forçar entrada</button>
@@ -198,6 +199,7 @@ function act(a){
   else if(a==='scan'){ load('varredura…','out2'); Radar.scan($('#tgt').value.trim(), $('#own').value.trim(), 250); }
   else if(a==='deep'){ load('busca profunda…','out2'); Radar.deepScan($('#tgt').value.trim(), 40, 40); }
   else if(a==='myroom'){ const o=document.getElementById('out'); if(o) o.innerHTML=loading('lendo suas salas...'); Radar.myRoom(); }
+  else if(a==='web'){ const rid=(document.getElementById('rid')||{}).value||''; if(rid) Radar.openRoomWeb(rid.trim()); }
   else if(a==='link'){
     const raw=(document.getElementById('lnk')||{}).value||'';
     let rid='';
@@ -385,6 +387,22 @@ function vaiCaca(){
   setTimeout(function(){
     const t=document.getElementById('tgt'); if(t && lastNick) t.value=lastNick;
   },150);
+}
+
+function abrirWeb(){
+  const rid=(document.getElementById('rid')||{}).value||'';
+  const m=rid.match(/(\d+-\d+)/);
+  const id=m?m[1]:rid.trim();
+  if(!id) return;
+  Radar.openRoomWeb(id);
+}
+
+function abrirWeb(){
+  const rid=(document.getElementById('rid')||{}).value||'';
+  const m=rid.match(/(\d+-\d+)/);
+  const id=m?m[1]:rid.trim();
+  if(!id) return;
+  Radar.openRoomWeb(id);
 }
 
 function act2(kind){

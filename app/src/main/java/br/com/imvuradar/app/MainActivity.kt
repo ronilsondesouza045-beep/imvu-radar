@@ -121,6 +121,20 @@ class MainActivity : AppCompatActivity() {
     inner class Bridge {
 
         @JavascriptInterface
+        fun openRoomWeb(rid: String): String {
+            runOnUiThread {
+                try {
+                    val i = android.content.Intent(this@MainActivity, RoomWebActivity::class.java)
+                    i.putExtra("roomId", rid)
+                    startActivity(i)
+                } catch (e: Exception) {
+                    Toast.makeText(this@MainActivity, "erro: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+            return "queued"
+        }
+
+        @JavascriptInterface
         fun myRoom(): String {
             Tracker.myRoom()
             return "queued"
