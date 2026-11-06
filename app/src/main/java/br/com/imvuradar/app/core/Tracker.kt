@@ -65,6 +65,8 @@ object Tracker {
             .put("avatar", p.avatar)
             .put("render", p.render)
             .put("is_vip", p.isVip)
+            .put("is_ap", p.isAp)
+            .put("online", p.online)
     }
 
     private fun peopleJson(list: List<Person>): JSONArray {
@@ -133,7 +135,14 @@ object Tracker {
             }
             var roomJson: JSONObject? = null
             var people = emptyList<Person>()
-            val found = api.findRoomFor(p.cid)
+
+            // 1) lista de amigos (rapida, as vezes vem vazia)
+            var found = api.findRoomFor(p.cid, listOf("friends"))
+            // 2) salas PROPRIAS do alvo (ele nao e amigo da conta -> nao aparece nas listas)
+            if (found == null) found = api.findInOwnRooms(p.cid, 120)
+            // 3) demais listas do IMVU
+            if (found == null) found = api.findRoomFor(p.cid, listOf("explore", "recent", "feature"))
+
             if (found != null) {
                 val meta = api.roomJson(found.first)
                 meta.put("people", found.second.size)

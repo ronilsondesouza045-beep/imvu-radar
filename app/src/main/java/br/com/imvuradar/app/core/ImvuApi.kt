@@ -15,7 +15,9 @@ data class Person(
     val displayName: String,
     val avatar: String,
     val render: String,
-    val isVip: Boolean = false
+    val isVip: Boolean = false,
+    val isAp: Boolean = false,
+    val online: Boolean = false
 )
 
 /**
@@ -184,7 +186,9 @@ class ImvuApi {
                 displayName = d.optString("display_name", nick),
                 avatar = d.optString("thumbnail_url", d.optString("avatar_image", "")),
                 render = d.optString("avatar_image", ""),
-                isVip = d.optBoolean("is_vip")
+                isVip = d.optBoolean("is_vip"),
+                isAp = d.optBoolean("is_ap"),
+                online = d.optBoolean("online")
             )
         }
         return null
@@ -237,7 +241,9 @@ class ImvuApi {
                     displayName = d.optString("display_name", "?"),
                     avatar = d.optString("thumbnail_url", d.optString("avatar_image", "")),
                     render = d.optString("avatar_image", ""),
-                    isVip = d.optBoolean("is_vip")
+                    isVip = d.optBoolean("is_vip"),
+                    isAp = d.optBoolean("is_ap"),
+                    online = d.optBoolean("online")
                 )
             )
         }
@@ -303,6 +309,17 @@ class ImvuApi {
                 val people = roster(rid)
                 if (people.any { it.cid == targetCid }) return Pair(rid, people)
             }
+        }
+        return null
+    }
+
+    /** procura o cid nas salas PROPRIAS dele (ele nao e amigo da conta, logo nao aparece nas listas) */
+    fun findInOwnRooms(targetCid: String, maxn: Int = 120): Pair<String, List<Person>>? {
+        for (n in 1..maxn) {
+            val rid = "${targetCid}-$n"
+            val meta = roomMeta(rid) ?: continue
+            val people = roster(rid)
+            if (people.any { it.cid == targetCid }) return Pair(rid, people)
         }
         return null
     }

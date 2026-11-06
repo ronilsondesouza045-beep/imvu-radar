@@ -217,10 +217,16 @@ window.__radarEvent = function(e){
       (p.avatar?'<img class="photo" src="'+esc(p.avatar)+'" alt="">':'')+
       '</div><div style="min-width:0"><div class="nm">'+esc(p.display_name||p.username)+'</div>'+
       '<div class="muted mono" style="font-size:12px">'+esc(p.username)+' · cid '+esc(p.cid)+'</div>'+
-      '<div class="badges"><span class="tag '+(p.online?'on':'off')+'">'+(p.online?'ONLINE':'OFFLINE')+'</span>'+(p.is_vip?'<span class="tag vip">VIP</span>':'')+(p.is_ap?'<span class="tag vip">AP</span>':'')+(room?tagRoom(room.privacy):'')+'</div>'+
+      '<div class="badges"><span class="tag '+(p.online?'on':'off')+'">'+(p.online?'ONLINE':'NAO VISTO')+'</span>'+(p.is_vip?'<span class="tag vip">VIP</span>':'')+(p.is_ap?'<span class="tag vip">AP</span>':'')+(room?tagRoom(room.privacy):'')+'</div>'+
       (room?'<div class="rm">'+esc(room.name)+'</div><div class="muted mono" style="font-size:12px">['+esc(room.roomId)+'] · '+(room.occupancy||'?')+'/'+(room.capacity||'?')+(room.owner?' · dono '+esc(room.owner):'')+'</div>':'')+
       '</div></div>'+
-      (room?'':'<div class="card" style="margin-top:12px;background:rgba(255,95,126,.07);border-color:rgba(255,95,126,.3)"><b style="color:#ff8fa3">OFFLINE no IMVU</b><p class="sub" style="margin:8px 0 10px">Ele não é amigo da sua conta, então não aparece nas listas. Dá pra caçar mesmo assim:</p><div class="row2"><button class="warn" onclick="act2(\'deep\')">Busca profunda</button><button onclick="act2(\'watch\')">Alerta ao vivo</button></div><div id="deepBox" class="muted" style="font-size:12.5px;margin-top:10px"></div></div>')+
+      (room?'':'<div class="card" style="margin-top:12px;background:rgba(255,95,126,.07);border-color:rgba(255,95,126,.3)"><b style="color:#ff8fa3">'+(p.is_vip?'Presença oculta (VIP/AP)':'Não achei a sala')+'</b>'+
+      '<p class="sub" style="margin:8px 0 10px">'+(p.is_vip?'Conta VIP/AP pode esconder a presença: o IMVU devolve "não visto" mesmo com a pessoa online. O roster da sala é a verdade.'+
+      ' Ele não é amigo desta conta, então não aparece nas listas do IMVU.':'Ele não é amigo desta conta, então não aparece nas listas do IMVU.')+
+      ' Dá pra caçar de três formas:</p>'+
+      '<div class="row2"><button class="warn" onclick="act2(\'deep\')">Busca profunda</button><button onclick="act2(\'watch\')">Alerta ao vivo</button></div>'+
+      '<div class="row2" style="margin-top:9px"><button class="ghost" onclick="vaiCaca()">Tenho o nick do dono da sala</button></div>'+
+      '<div id="deepBox" class="muted" style="font-size:12.5px;margin-top:10px"></div></div>')+
       (room?'<h2>Dentro ('+people.length+')</h2>'+peopleGrid(people):'');
     }
   }
@@ -277,6 +283,13 @@ window.__radarEvent = function(e){
     }
   }
 };
+
+function vaiCaca(){
+  go('mais');
+  setTimeout(function(){
+    const t=document.getElementById('tgt'); if(t && lastNick) t.value=lastNick;
+  },150);
+}
 
 function act2(kind){
   const nick=lastNick||'';
