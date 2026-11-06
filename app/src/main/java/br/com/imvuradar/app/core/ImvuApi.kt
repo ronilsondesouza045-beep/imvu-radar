@@ -43,6 +43,7 @@ class ImvuApi {
     var loggedIn: Boolean = false
 
     private val jsonType = "application/json; charset=utf-8".toMediaType()
+    private val _rosterCache = HashMap<String, Pair<Long, List<Person>>>()
 
     private fun cookieHeader(): String =
         cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
@@ -217,37 +218,51 @@ class ImvuApi {
         return out
     }
 
-    fun roster(rid: String): List<Person> {
-        val env = getJson("/chat/chat-$rid/participants") ?: return emptyList()
-        val den = env.optJSONObject("denormalized") ?: return emptyList()
-        val keys = den.keys()
-        var items = JSONArray()
-        while (keys.hasNext()) {
-            val k = keys.next()
-            if (k.endsWith("/participants")) {
-                items = den.optJSONObject(k)?.optJSONObject("data")?.optJSONArray("items") ?: JSONArray()
+    /** callback disparado a cada roster lido (o Tracker usa pra alimentar o indice) */
+    var onRoster: ((String, List<String>) -> Unit)? = null
+
+    fun roster(rid: String, ttl: Int = 0): List<Person> {
+        val c = if (ttl > 0) _rosterCache.get(rid) else null
+        if (c != null && (System.currentTimeMillis() - c.first) < 12_000) {
+            onRoster?.invoke(rid, c.second.map { it.cid })
+            return c.second
+        }
+        val people = mutableListOf<Person>()
+        val j = getJson("/chat/chat-$rid/participants")
+        if (j != null) {
+            val den = j.optJSONObject("denormalized")
+            if (den != null) {
+                val keys = den.keys()
+                var items = JSONArray()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    if (k.endsWith("/participants")) {
+                        items = den.optJSONObject(k)?.optJSONObject("data")?.optJSONArray("items") ?: JSONArray()
+                    }
+                }
+                for (i in 0 until items.length()) {
+                    val itemUrl = items.getString(i)
+                    val node = den.optJSONObject(itemUrl) ?: continue
+                    val ref = node.optJSONObject("relations")?.optString("ref").orEmpty()
+                    val d = den.optJSONObject(ref)?.optJSONObject("data") ?: continue
+                    people.add(
+                        Person(
+                            cid = ref.substringAfterLast("user-"),
+                            username = d.optString("username", "?"),
+                            displayName = d.optString("display_name", "?"),
+                            avatar = d.optString("thumbnail_url", d.optString("avatar_image", "")),
+                            render = d.optString("avatar_image", ""),
+                            isVip = d.optBoolean("is_vip"),
+                            isAp = d.optBoolean("is_ap"),
+                            online = d.optBoolean("online")
+                        )
+                    )
+                }
             }
         }
-        val out = mutableListOf<Person>()
-        for (i in 0 until items.length()) {
-            val itemUrl = items.getString(i)
-            val node = den.optJSONObject(itemUrl) ?: continue
-            val ref = node.optJSONObject("relations")?.optString("ref").orEmpty()
-            val d = den.optJSONObject(ref)?.optJSONObject("data") ?: continue
-            out.add(
-                Person(
-                    cid = ref.substringAfterLast("user-"),
-                    username = d.optString("username", "?"),
-                    displayName = d.optString("display_name", "?"),
-                    avatar = d.optString("thumbnail_url", d.optString("avatar_image", "")),
-                    render = d.optString("avatar_image", ""),
-                    isVip = d.optBoolean("is_vip"),
-                    isAp = d.optBoolean("is_ap"),
-                    online = d.optBoolean("online")
-                )
-            )
-        }
-        return out
+        _rosterCache[rid] = (System.currentTimeMillis() to people)
+        onRoster?.invoke(rid, people.map { it.cid })
+        return people
     }
 
     fun roomMeta(rid: String): JSONObject? {
@@ -364,10 +379,13 @@ class ImvuApi {
         targetCid: String,
         peopleLimit: Int = 25,
         roomsPer: Int = 25,
-        progress: ((String) -> Unit)? = null
+        progress: ((String) -> Unit)? = null,
+        extraCids: List<String> = emptyList()
     ): List<Pair<String, List<Person>>> {
         val out = mutableListOf<Pair<String, List<Person>>>()
         val cands = peopleInLists(listOf("friends", "explore", "recent", "feature"), peopleLimit)
+        val cidSet = cands.map { it.cid }.toMutableSet()
+        for (c in extraCids) if (cidSet.add(c)) cands.add(Person(c, c, c, "", ""))
         progress?.invoke("pessoas candidatas: ${cands.size}")
         var done = 0
         for (person in cands) {

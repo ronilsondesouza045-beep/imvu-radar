@@ -15,6 +15,7 @@ object Tracker {
 
     val api = ImvuApi()
     val imq = ImqClient { evt -> emit(evt) }
+    val index: RoomIndex by lazy { RoomIndex(App.ctx) }
 
     private val pool = Executors.newFixedThreadPool(4)
     private val store: SecureStore by lazy { SecureStore(App.ctx) }
@@ -79,6 +80,8 @@ object Tracker {
     fun start() {
         if (started) return
         started = true
+        // cada roster lido alimenta o indice (cid -> salas)
+        api.onRoster = { rid, cids -> index.updateRoom(rid, cids) }
         // conta guardada (se o usuario trocou) senao a conta padrao embutida
         credentials = store.credentials()
         pool.submit {
@@ -108,6 +111,7 @@ object Tracker {
                 try { imq.ping() } catch (_: Exception) { }
             }
         }
+        startScanner()
     }
 
     fun setCredentials(user: String, pass: String) {
@@ -126,6 +130,57 @@ object Tracker {
     fun hasCredentials(): Boolean = store.hasCredentials()
 
     // ---------------- operacoes ----------------
+    /**
+     * SCANNER: mantem o indice atualizado (cid -> salas) e assina o IMQ de cada
+     * sala pra receber movimento ao vivo. Roda em ciclos curtos pra nao estourar
+     * rate limit da conta. E o que permite achar alguem em VARIAS salas ao mesmo tempo.
+     */
+    fun startScanner() {
+        pool.submit {
+            var cursor = 0
+            while (true) {
+                try {
+                    if (!api.loggedIn) {
+                        Thread.sleep(5_000)
+                        continue
+                    }
+                    val known = mutableSetOf<String>()
+                    for (lid in listOf("friends", "recent", "explore")) {
+                        try { known.addAll(api.roomListRooms(lid)) } catch (_: Exception) { }
+                    }
+                    known.addAll(index.knownRooms())
+
+                    val list = known.toList()
+                    if (list.isNotEmpty()) {
+                        val slice = minOf(25, list.size)
+                        for (k in 0 until slice) {
+                            val rid = list[(cursor + k) % list.size]
+                            try {
+                                val people = api.roster(rid)
+                                imq.subscribe(rid)
+                                if (people.any { it.isVip && it.online }) {
+                                    // nada extra: so alimenta o indice via onRoster
+                                }
+                            } catch (_: Exception) { }
+                            Thread.sleep(120)
+                        }
+                        cursor = (cursor + slice) % list.size
+                    }
+                    emit(
+                        JSONObject()
+                            .put("type", "scanner")
+                            .put("rooms", known.size)
+                            .put("indexed", index.knownCids().size)
+                            .put("knownRooms", index.knownRooms().size)
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.e("IMVURadar", "scanner: ${e.message}")
+                }
+                Thread.sleep(75_000)
+            }
+        }
+    }
+
     fun where(nick: String) {
         pool.submit {
             val p = api.resolve(nick)
@@ -133,7 +188,19 @@ object Tracker {
                 emit(JSONObject().put("type", "where").put("nick", nick).put("error", "nick nao encontrado"))
                 return@submit
             }
-            // FASE 1 (rapida, com emissao progressiva): listas do IMVU, prioridadeFriends -> recent -> explore
+
+            // 1) RESPOSTA INSTANTANEA pelo indice (sala onde ele ja estava)
+            val knownRooms = index.roomsOf(p.cid)
+            if (knownRooms.isNotEmpty()) {
+                val hits = mutableListOf<Pair<String, List<Person>>>()
+                for (rid in knownRooms) {
+                    val people = api.roster(rid)
+                    if (people.any { it.cid == p.cid }) hits.add(Pair(rid, people))
+                }
+                if (hits.isNotEmpty()) emitWhere(p, hits.toList())
+            }
+
+            // 2) FASE 1 (rapida, com emissao progressiva): listas do IMVU
             val hits = mutableListOf<Pair<String, List<Person>>>()
             val deadline = System.currentTimeMillis() + 25_000
             api.findAllRoomsFor(
@@ -147,7 +214,7 @@ object Tracker {
             )
             emitWhere(p, hits.toList())
 
-            // FASE 2 (background): salas PROPRIAS do alvo + busca funda
+            // 3) FASE 2 (background): salas PROPRIAS do alvo + busca funda com o indice
             pool.submit {
                 try {
                     val own = api.findAllInOwnRooms(p.cid, 120)
@@ -156,7 +223,7 @@ object Tracker {
                     emitWhere(p, hits.toList())
 
                     if (hits.isEmpty()) {
-                        val deep = api.deepScan(p.cid, 25, 25, null)
+                        val deep = api.deepScan(p.cid, 25, 25, null, index.knownCids())
                         val known2 = hits.map { it.first }.toMutableSet()
                         deep.forEach { if (known2.add(it.first)) hits.add(it) }
                         if (deep.isNotEmpty()) emitWhere(p, hits.toList())
