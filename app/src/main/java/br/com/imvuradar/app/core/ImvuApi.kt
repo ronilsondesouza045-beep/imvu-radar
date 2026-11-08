@@ -44,6 +44,7 @@ class ImvuApi {
 
     private val jsonType = "application/json; charset=utf-8".toMediaType()
     private val _rosterCache = HashMap<String, Pair<Long, List<Person>>>()
+    private val _userCache = HashMap<String, Pair<Long, String>>()
 
     private fun cookieHeader(): String =
         cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
@@ -201,6 +202,18 @@ class ImvuApi {
         return n.optJSONObject("data")?.optBoolean("online") ?: false
     }
 
+    /** cid -> username, com cache. Usado pelo roster do IMQ. */
+    fun usernameOf(cid: String): String {
+        val now = System.currentTimeMillis()
+        _userCache[cid]?.let { if (now - it.first < 900_000) return it.second }
+        val env = getJson("/user/user-$cid")
+        val name = env?.let {
+            firstNode(it)?.optJSONObject("data")?.optString("username")
+        }?.takeIf { !it.isNullOrBlank() } ?: cid
+        _userCache[cid] = now to name
+        return name
+    }
+
     // ---------------- salas ----------------
     fun roomListRooms(listId: String): List<String> {
         val env = getJson("/room_list/room_list-$cid-$listId/rooms") ?: return emptyList()
@@ -314,6 +327,19 @@ class ImvuApi {
         if (cover.startsWith("//")) cover = "https:" + cover
         out.put("cover", cover)
         return out
+    }
+
+    /** nome + privacidade. Sala privada de terceiro vem 403 -> fallback pelo numero. */
+    fun roomLabel(rid: String): Pair<String, String> {
+        val m = roomJson(rid)
+        val n = rid.substringAfterLast('-', "0")
+        if (m.optBoolean("restricted")) {
+            val name = if (n == "1") "My Room" else "Sala privada $n"
+            return Pair(name, "PRIVADA")
+        }
+        val name = m.optString("name", rid).ifBlank { rid }
+        val privacy = if (m.optString("privacy") == "private") "PRIVADA" else "PUBLICA"
+        return Pair(name, privacy)
     }
 
     fun enterRoom(rid: String): Int {
@@ -457,7 +483,8 @@ class ImvuApi {
         targetCid: String,
         listIds: List<String> = listOf("friends", "explore", "recent", "feature"),
         onHit: ((String, List<Person>) -> Unit)? = null,
-        deadlineMs: Long = 0
+        deadlineMs: Long = 0,
+        onRoom: ((String) -> Unit)? = null
     ): List<Pair<String, List<Person>>> {
         val out = mutableListOf<Pair<String, List<Person>>>()
         val seen = mutableSetOf<String>()
@@ -465,6 +492,9 @@ class ImvuApi {
             for (rid in roomListRooms(lid)) {
                 if (deadlineMs > 0 && System.currentTimeMillis() > deadlineMs) return out
                 if (!seen.add(rid)) continue
+                // assina a sala mesmo sem roster legivel: o IMQ pode provar
+                // a presenca do alvo (sala privada/VIP) pelo edge:participants
+                onRoom?.invoke(rid)
                 val people = roster(rid)
                 if (people.any { it.cid == targetCid }) {
                     out.add(Pair(rid, people))

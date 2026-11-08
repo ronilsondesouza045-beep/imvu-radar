@@ -67,6 +67,19 @@ class MainActivity : AppCompatActivity() {
 
         askNotifications()
         askBatteryExemption()
+
+        // auto-update: consulta a release mais nova no launch
+        Updater.check(this) { res ->
+            runOnUiThread {
+                try {
+                    web.evaluateJavascript(
+                        "window.__radarEvent && window.__radarEvent({type:'update',data:$res})",
+                        null
+                    )
+                } catch (_: Exception) {
+                }
+            }
+        }
     }
 
     override fun onResume() {
@@ -122,29 +135,21 @@ class MainActivity : AppCompatActivity() {
     inner class Bridge {
 
         @JavascriptInterface
-        fun openRoomWeb(rid: String): String {
-            runOnUiThread {
-                try {
-                    val i = android.content.Intent(this@MainActivity, RoomWebActivity::class.java)
-                    i.putExtra("roomId", rid)
-                    startActivity(i)
-                } catch (e: Exception) {
-                    Toast.makeText(this@MainActivity, "erro: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            }
+        fun where(nick: String): String {
+            Tracker.where(nick)
             return "queued"
         }
 
         @JavascriptInterface
-        fun myRoom(): String {
-            Tracker.myRoom()
+        fun track(nick: String): String {
+            Tracker.track(nick)
             return "queued"
         }
 
         @JavascriptInterface
-        fun hunt(target: String, owners: String, maxn: String): String {
-            Tracker.privateHunt(target, owners, maxn.toIntOrNull() ?: 400)
-            return "queued"
+        fun stopTrack(): String {
+            Tracker.stopTrack()
+            return "ok"
         }
 
         @JavascriptInterface
@@ -180,57 +185,6 @@ class MainActivity : AppCompatActivity() {
         fun setCredentials(user: String, pass: String): String {
             Tracker.setCredentials(user, pass)
             return "ok"
-        }
-
-        @JavascriptInterface
-        fun where(nick: String): String {
-            Tracker.where(nick)
-            return "queued"
-        }
-
-        @JavascriptInterface
-        fun friends(): String {
-            Tracker.friends()
-            return "queued"
-        }
-
-        @JavascriptInterface
-        fun room(rid: String): String {
-            Tracker.room(rid)
-            return "queued"
-        }
-
-        @JavascriptInterface
-        fun enter(rid: String): String {
-            Tracker.enter(rid)
-            return "queued"
-        }
-
-        @JavascriptInterface
-        fun leave(rid: String): String {
-            Tracker.leave(rid)
-            return "queued"
-        }
-
-        @JavascriptInterface
-        fun watchTarget(nick: String): String {
-            Tracker.watchTarget(nick)
-            return "queued"
-        }
-
-        @JavascriptInterface
-        fun lastSeen(cid: String): String = Tracker.lastSeen(cid).toString()
-
-        @JavascriptInterface
-        fun scan(target: String, owners: String, max: String): String {
-            Tracker.scan(target, owners.split(",").map { it.trim() }.filter { it.isNotEmpty() }, max.toIntOrNull() ?: 250)
-            return "queued"
-        }
-
-        @JavascriptInterface
-        fun deepScan(target: String, people: String, rooms: String): String {
-            Tracker.deepScan(target, people.toIntOrNull() ?: 40, rooms.toIntOrNull() ?: 40)
-            return "queued"
         }
 
         @JavascriptInterface
