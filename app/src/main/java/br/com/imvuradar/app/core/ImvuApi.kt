@@ -512,7 +512,8 @@ class ImvuApi {
         listIds: List<String> = listOf("friends", "explore", "recent", "feature"),
         onHit: ((String, List<Person>) -> Unit)? = null,
         deadlineMs: Long = 0,
-        onRoom: ((String) -> Unit)? = null
+        onRoom: ((String) -> Unit)? = null,
+        stopOnFirst: Boolean = false
     ): List<Pair<String, List<Person>>> {
         val out = mutableListOf<Pair<String, List<Person>>>()
         val seen = mutableSetOf<String>()
@@ -527,6 +528,7 @@ class ImvuApi {
                 if (people.any { it.cid == targetCid }) {
                     out.add(Pair(rid, people))
                     onHit?.invoke(rid, people)
+                    if (stopOnFirst) return out
                 }
             }
         }

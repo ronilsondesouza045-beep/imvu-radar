@@ -11,8 +11,8 @@ android {
         applicationId = "br.com.imvuradar.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 36
-        versionName = "1.0.36"
+        versionCode = 37
+        versionName = "1.0.37"
         resourceConfigurations += listOf("pt", "en")
     }
 
@@ -55,5 +55,6 @@ dependencies {
     implementation("androidx.webkit:webkit:1.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
+
 
 

@@ -248,24 +248,34 @@ object Tracker {
                 }
             }
 
-            // busca inicial nas listas/salas do alvo (publicas). O IMQ confirma
-            // a sala real e entrega o roster de privada.
+            // fallback HTTP rapido: listas oficiais; aplica o primeiro hit na hora
             val hits = mutableListOf<Pair<String, List<Person>>>()
-            try {
-                hits.addAll(
-                    api.findAllRoomsFor(
-                        p.cid,
-                        listOf("friends", "recent", "explore"),
-                        deadlineMs = System.currentTimeMillis() + 15_000
+            if (currentRoom == null) {
+                try {
+                    hits.addAll(
+                        api.findAllRoomsFor(
+                            p.cid,
+                            listOf("friends", "recent", "explore"),
+                            deadlineMs = System.currentTimeMillis() + 15_000,
+                            stopOnFirst = true
+                        )
                     )
-                )
-            } catch (_: Exception) { }
-            try { hits.addAll(api.findAllInOwnRooms(p.cid, 120)) } catch (_: Exception) { }
+                } catch (_: Exception) { }
+                if (currentRoom == null && hits.isNotEmpty()) {
+                    setCurrentRoom(hits.first().first, hits.first().second, "roster")
+                }
+            }
+
+            // salas proprias do alvo: varredura lenta, so se ainda nao achou
+            if (currentRoom == null) {
+                try { hits.addAll(api.findAllInOwnRooms(p.cid, 120)) } catch (_: Exception) { }
+                if (currentRoom == null && hits.isNotEmpty()) {
+                    setCurrentRoom(hits.first().first, hits.first().second, "roster")
+                }
+            }
 
             for (h in hits) imq.subscribeRoom(h.first)
-            if (currentRoom == null && hits.isNotEmpty()) {
-                setCurrentRoom(hits.first().first, hits.first().second, "roster")
-            } else if (currentRoom == null) {
+            if (currentRoom == null) {
                 emit(JSONObject().put("type", "track_status").put("msg", "aguardando evento do IMQ..."))
             }
         }
