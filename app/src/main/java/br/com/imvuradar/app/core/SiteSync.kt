@@ -25,6 +25,8 @@ object SiteSync {
     private val pool = Executors.newSingleThreadScheduledExecutor()
     @Volatile private var started = false
     @Volatile private var lastCommandId = ""
+    private var lastSent = ""
+    private var lastSentAt = 0L
 
     fun start() {
         if (started) return
@@ -46,20 +48,36 @@ object SiteSync {
         }
     }
 
-    private fun post(path: String, body: JSONObject) {
+    private fun post(path: String, body: JSONObject): Boolean {
         val req = Request.Builder().url(Config.SITE_URL + path)
             .header("Content-Type", "application/json")
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .build()
-        try {
-            client.newCall(req).execute().use { _ -> }
+        return try {
+            client.newCall(req).execute().use { r -> r.isSuccessful }
         } catch (_: Exception) {
+            false
         }
     }
 
     private fun tick() {
         try {
-            post("/api/status", Tracker.snapshot())
+            // status: envia quando muda (throttle 15s) ou heartbeat a cada 60s.
+            // evita escrever no storage a cada 10s e estourar cota.
+            val snap = Tracker.snapshot()
+            val now = System.currentTimeMillis()
+            val cmp = JSONObject(snap.toString())
+            cmp.remove("lastEventAt")
+            val body = cmp.toString()
+            val changed = body != lastSent
+            val heartbeat = now - lastSentAt >= 60_000
+            if (heartbeat || (changed && now - lastSentAt >= 15_000)) {
+                if (post("/api/status", snap)) {
+                    lastSent = body
+                    lastSentAt = now
+                }
+            }
+
             val cfg = get("/api/config")
             if (cfg != null && RemoteConfig.update(cfg)) Tracker.refreshRoomLabel()
             val cmd = get("/api/command") ?: return

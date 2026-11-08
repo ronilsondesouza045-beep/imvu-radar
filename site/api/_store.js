@@ -1,71 +1,99 @@
-const GH_API = "https://api.github.com";
+import { put, get } from "@vercel/blob";
 
-function env(name) {
-  const v = process.env[name];
-  if (!v) throw new Error("missing env " + name);
-  return v;
-}
+const LEGACY_TTL = 300_000;
+const legacy = { at: 0, data: null };
 
-async function readGist() {
-  const id = env("GH_GIST_ID");
-  const token = env("GH_TOKEN");
-  const r = await fetch(`${GH_API}/gists/${id}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
-      "User-Agent": "imvu-radar-site",
-      "Cache-Control": "no-cache",
-    },
-    cache: "no-store",
-  });
-  if (!r.ok) throw new Error("gist read " + r.status);
-  return r.json();
-}
-
-function parse(content, fallback) {
-  if (!content) return fallback;
+async function readBlob(name) {
   try {
-    return JSON.parse(content);
+    const r = await get(name, { access: "private", useCache: false });
+    if (!r || !r.stream) return null;
+    const text = await new Response(r.stream).text();
+    if (!text) return null;
+    return JSON.parse(text);
   } catch {
-    return fallback;
+    return null;
   }
 }
 
+async function writeBlob(name, obj) {
+  await put(name, JSON.stringify(obj === null ? {} : obj), {
+    access: "private",
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    contentType: "application/json",
+    cacheControlMaxAge: 60,
+  });
+}
+
 /**
- * Cada endpoint grava SO o proprio arquivo no gist.
- * Antes tudo era um state.json unico: o POST /api/status (a cada 10s)
- * podia reescrever o estado lido antes do comando e apagar o comando
- * que o site acabou de enviar. Arquivos separados acabam com essa corrida.
+ * Migracao do formato antigo (gist), somente leitura e cacheada.
+ * Depois da primeira leitura o valor vai pro Blob e o gist nao e mais tocado.
  */
-async function readFile(name) {
-  const j = await readGist();
-  const files = j.files || {};
-  if (files[name]) return parse(files[name].content, {});
-  // migracao do formato antigo (state.json unico)
-  const legacy = parse(files["state.json"] && files["state.json"].content, {});
-  if (name === "status.json") return legacy.status || {};
-  if (name === "command.json") return legacy.command || null;
+async function readLegacy() {
+  if (legacy.data && Date.now() - legacy.at < LEGACY_TTL) return legacy.data;
+  try {
+    const id = process.env.GH_GIST_ID;
+    const token = process.env.GH_TOKEN;
+    if (!id || !token) return null;
+    const r = await fetch(`https://api.github.com/gists/${id}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "imvu-radar-site",
+      },
+      cache: "no-store",
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const files = j.files || {};
+    const out = {};
+    if (files["state.json"]) {
+      try {
+        Object.assign(out, JSON.parse(files["state.json"].content));
+      } catch {}
+    }
+    for (const n of ["status.json", "command.json", "config.json"]) {
+      if (files[n]) {
+        try {
+          out[n] = JSON.parse(files[n].content);
+        } catch {}
+      }
+    }
+    legacy.data = out;
+    legacy.at = Date.now();
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+function fromLegacy(name, state) {
+  if (name === "status.json") return state["status.json"] || state.status || {};
+  if (name === "command.json") {
+    return state["command.json"] !== undefined ? state["command.json"] : state.command || null;
+  }
   if (name === "config.json") {
-    return { rooms: legacy.rooms || {}, version: legacy.version || null };
+    if (state["config.json"]) return state["config.json"];
+    return { rooms: state.rooms || {}, version: state.version || null };
   }
   return {};
 }
 
+async function readFile(name) {
+  const v = await readBlob(name);
+  if (v !== null) return v;
+  const state = await readLegacy();
+  if (!state) return name === "command.json" ? null : {};
+  const fallback = fromLegacy(name, state);
+  // migra na primeira leitura; se falhar, segue com o fallback em memoria
+  try {
+    await writeBlob(name, fallback);
+  } catch {}
+  return fallback;
+}
+
 async function writeFile(name, obj) {
-  const id = env("GH_GIST_ID");
-  const token = env("GH_TOKEN");
-  const content = JSON.stringify(obj === null ? {} : obj);
-  const r = await fetch(`${GH_API}/gists/${id}`, {
-    method: "PATCH",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
-      "Content-Type": "application/json",
-      "User-Agent": "imvu-radar-site",
-    },
-    body: JSON.stringify({ files: { [name]: { content } } }),
-  });
-  if (!r.ok) throw new Error("gist write " + r.status);
+  await writeBlob(name, obj);
 }
 
 function body(req) {
