@@ -1,10 +1,14 @@
-import { readState, writeState, body } from "./_store.js";
+import { readFile, writeFile, body, noStore } from "./_store.js";
 
 export default async function handler(req, res) {
+  noStore(res);
   try {
-    const state = await readState();
+    const state = await readFile("config.json");
     if (req.method === "GET") {
-      res.status(200).json({ rooms: state.rooms || {}, version: state.version || null });
+      res.status(200).json({
+        rooms: (state && state.rooms) || {},
+        version: (state && state.version) || null,
+      });
       return;
     }
     if (req.method === "POST") {
@@ -18,7 +22,7 @@ export default async function handler(req, res) {
       }
       if (b.version) state.version = b.version;
       state.rooms = rooms;
-      await writeState(state);
+      await writeFile("config.json", state);
       res.status(200).json({ ok: true, rooms });
       return;
     }

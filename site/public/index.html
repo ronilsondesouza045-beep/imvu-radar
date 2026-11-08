@@ -166,6 +166,8 @@ let lastNick='';
 let trackNick='';
 let lastTrackTarget=null;
 let lastPrivacy='';
+let lastRemoteAt=0;
+let lastRemoteImq=false;
 
 async function act(a){
   if(a==='where'){
@@ -253,6 +255,11 @@ function ficha(cid,user,name,render,photo){
 }
 
 function nowTime(){ try{ return new Date().toLocaleTimeString('pt-BR'); }catch(_){ return ''; } }
+
+function viaName(v){
+  const m={roster:'lista/roster',imq:'IMQ',imq_new:'IMQ (entrou agora)',imq_probe:'IMQ (fila ativa)',myroom:'My Room (provável)',catvu:'catvu'};
+  return m[v]||v||'';
+}
 
 function clearTrackUI(){
   const pr=$('#privRoom'); if(pr) pr.innerHTML='';
@@ -363,10 +370,11 @@ window.__radarEvent = function(e){
     const name=e.name||e.room||'';
     const priv=e.privacy||'?';
     lastPrivacy=priv;
+    const via=e.detectedBy?(' · fonte: '+esc(viaName(e.detectedBy))):'';
     const r=$('#privRoom');
     const o=$('#privOcc');
     if(priv==='PRIVADA'){
-      if(r) r.innerHTML='<div class="trackline"><span class="muted">['+nowTime()+']</span> ALVO AQUI: '+esc(nick)+' está na sala "'+esc(name)+'" (ID: '+esc(e.room)+') - '+esc(priv)+'</div>';
+      if(r) r.innerHTML='<div class="trackline"><span class="muted">['+nowTime()+']</span> ALVO AQUI: '+esc(nick)+' está na sala "'+esc(name)+'" (ID: '+esc(e.room)+') - '+esc(priv)+via+'</div>';
       setOccupants(e.occupants||[], e.total);
     } else {
       if(r) r.innerHTML='<div class="empty">Alvo em sala pública — veja a aba Onde.</div>';
@@ -425,7 +433,7 @@ function showLogin(msg){
 
 async function api(path, opts){
   opts=opts||{};
-  const r=await fetch(path,{...opts,headers:{'Content-Type':'application/json'}});
+  const r=await fetch(path,{cache:'no-store',...opts,headers:{'Content-Type':'application/json'}});
   if(!r.ok) throw new Error('HTTP '+r.status);
   return r.json();
 }
@@ -452,6 +460,12 @@ async function loadRemoteStatus(){
   if(window.Radar) return;
   try{
     const s=await api('/api/status');
+    lastRemoteAt=Date.now();
+    lastRemoteImq=!!s.imq;
+    const age=(s.updated||0)?Math.max(0,Math.round((Date.now()-s.updated)/1000)):null;
+    const stale=!age||age>120;
+    const d=$('#dot');
+    if(d) d.className=stale?'dot off':(s.imq?'dot':(s.loggedIn?'dot wait':'dot off'));
     if(TAB==='onde'){
       if(s.where && s.where.rooms) renderRemoteWhere(s.where);
     }
@@ -460,7 +474,8 @@ async function loadRemoteStatus(){
       lastPrivacy=priv;
       const r=$('#privRoom'); const o=$('#privOcc');
       if(s.room && priv==='PRIVADA'){
-        if(r) r.innerHTML='<div class="trackline"><span class="muted">['+nowTime()+']</span> ALVO AQUI: sala "'+esc(s.roomName||s.room)+'" (ID: '+esc(s.room)+') - '+esc(priv)+'</div>';
+        const via=s.detectedBy?(' · fonte: '+esc(viaName(s.detectedBy))):'';
+        if(r) r.innerHTML='<div class="trackline"><span class="muted">['+nowTime()+']</span> ALVO AQUI: sala "'+esc(s.roomName||s.room)+'" (ID: '+esc(s.room)+') - '+esc(priv)+via+'</div>';
         if(o) o.innerHTML='<span class="muted">['+nowTime()+']</span> OCUPANTES: '+(s.occupants||0);
       } else if(s.room){
         if(r) r.innerHTML='<div class="empty">Alvo em sala pública — veja a aba Onde.</div>';
@@ -470,25 +485,32 @@ async function loadRemoteStatus(){
         if(o) o.innerHTML='';
       }
       const st=$('#trackStatus');
-      if(st) st.textContent='remoto: IMQ '+(s.imq?'on':'off')+' · '+(s.updated?new Date(s.updated).toLocaleTimeString('pt-BR'):'');
+      if(st) st.textContent='remoto: IMQ '+(s.imq?'on':'off')+(age!=null?(' · sync '+(age<60?(age+'s'):(Math.round(age/60)+'min'))+' atrás'):' · sem sync');
       const l=$('#trackLog');
       if(l && !l.children.length) l.innerHTML='<div class="empty">log de entradas/saídas no APK; aqui mostra o status atual.</div>';
     }
   }catch(e){
+    lastRemoteAt=0;
+    const d=$('#dot'); if(d) d.className='dot off';
     const st=$('#trackStatus'); if(st) st.textContent='site/APK offline';
   }
 }
 
 render();
 setInterval(()=>{
-  if(!window.Radar) return;
-  let s=null;
-  try{ s=JSON.parse(Radar.status()); }catch(_){ s=null; }
-  if(!s) return;
-  const d=$('#dot');
-  if(s.loggedIn && s.imq) d.className='dot';
-  else if(s.reconnecting || s.loggedIn) d.className='dot wait';
-  else d.className='dot off';
+  const d=$('#dot'); if(!d) return;
+  if(window.Radar){
+    let s=null;
+    try{ s=JSON.parse(Radar.status()); }catch(_){ s=null; }
+    if(!s) return;
+    if(s.loggedIn && s.imq) d.className='dot';
+    else if(s.reconnecting || s.loggedIn) d.className='dot wait';
+    else d.className='dot off';
+  } else {
+    const age=lastRemoteAt?(Date.now()-lastRemoteAt):null;
+    if(!lastRemoteAt || age>120000) d.className='dot off';
+    else d.className=lastRemoteImq?'dot':'dot wait';
+  }
 }, 4000);
 setInterval(()=>{ if(!window.Radar && (TAB==='onde' || TAB==='privada')) loadRemoteStatus(); }, 10000);
 </script>

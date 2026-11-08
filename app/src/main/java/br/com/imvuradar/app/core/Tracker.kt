@@ -6,7 +6,11 @@ import br.com.imvuradar.app.Notifications
 import br.com.imvuradar.app.SecureStore
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Orquestrador enxuto:
@@ -24,7 +28,8 @@ object Tracker {
     }
     val index: RoomIndex by lazy { RoomIndex(App.ctx) }
 
-    private val pool = Executors.newFixedThreadPool(4)
+    private val pool = Executors.newCachedThreadPool()
+    private val probeGen = AtomicInteger(0)
     private val store: SecureStore by lazy { SecureStore(App.ctx) }
 
     @Volatile var listener: ((JSONObject) -> Unit)? = null
@@ -42,6 +47,7 @@ object Tracker {
     @Volatile private var currentRoom: String? = null
     @Volatile private var currentName: String = ""
     @Volatile private var currentPrivacy: String = ""
+    @Volatile private var currentDetectedBy: String = ""
     @Volatile private var settingRoom: String? = null
     @Volatile private var lastWhere: JSONObject? = null
     private var roomSeq = 0
@@ -200,6 +206,9 @@ object Tracker {
                 return@submit
             }
 
+            // cancela qualquer probe antigo ANTES de trocar o alvo (mesmo se for o mesmo nick)
+            val gen = probeGen.incrementAndGet()
+
             synchronized(this) {
                 targetCid = p.cid
                 targetNick = p.username
@@ -207,6 +216,7 @@ object Tracker {
                 currentRoom = null
                 currentName = ""
                 currentPrivacy = ""
+                currentDetectedBy = ""
                 settingRoom = null
                 roomSeq++
                 synchronized(rosterLock) { roster.clear() }
@@ -216,8 +226,18 @@ object Tracker {
             emit(JSONObject().put("type", "track_start").put("target", personJson(p)))
             emit(JSONObject().put("type", "track_status").put("msg", "conectando ao IMQ e procurando a sala..."))
 
-            // probe de liveness: conexao nova, status 0 nas filas chat-<alvo>-*
-            pool.submit { probeLoop(p.cid) }
+            // probe roda na MESMA conexao IMQ e em thread propria: nunca segura o pool
+            startProbeLoop(p.cid, gen)
+
+            // fonte extra: salas privadas que o indice do catvu ja conhece
+            pool.submit {
+                val hint = try { api.catvuRooms(p.username) } catch (_: Exception) { emptyList() }
+                if (hint.isNotEmpty() && probeGen.get() == gen &&
+                    targetCid == p.cid && currentRoom == null
+                ) {
+                    setCurrentRoom(hint.first(), via = "catvu")
+                }
+            }
 
             // busca inicial nas listas/salas do alvo (publicas). O IMQ confirma
             // a sala real e entrega o roster de privada.
@@ -235,51 +255,112 @@ object Tracker {
 
             for (h in hits) imq.subscribeRoom(h.first)
             if (currentRoom == null && hits.isNotEmpty()) {
-                setCurrentRoom(hits.first().first, hits.first().second)
+                setCurrentRoom(hits.first().first, hits.first().second, "roster")
             } else if (currentRoom == null) {
                 emit(JSONObject().put("type", "track_status").put("msg", "aguardando evento do IMQ..."))
             }
         }
     }
 
-    private fun probeLiveness(target: String, callback: (List<String>) -> Unit) {
-        val probe = ImqClient { }
-        probe.onReady = {
-            probe.probeQueues(target) { live ->
-                callback(live)
-                probe.stop()
-            }
-        }
-        probe.connect(api.cid, api.sessionId, botUser)
-    }
-
-    private fun probeLoop(target: String) {
-        while (targetCid == target) {
-            val latch = java.util.concurrent.CountDownLatch(1)
-            val ref = java.util.concurrent.atomic.AtomicReference<List<String>>(emptyList())
-            probeLiveness(target) { live ->
-                ref.set(live)
-                latch.countDown()
-            }
-            latch.await(30, java.util.concurrent.TimeUnit.SECONDS)
-            if (targetCid != target) break
-            val live = ref.get()
-            if (live.isNotEmpty()) {
-                if (currentRoom == null && live.size == 1) {
-                    setCurrentRoom(live[0])
-                } else if (currentRoom == null && live.size > 1) {
-                    emit(JSONObject().put("type", "track_status").put("msg", "varias salas ativas; aguardando evento..."))
-                } else if (live.size == 1 && currentRoom != live[0]) {
-                    setCurrentRoom(live[0])
+    private fun startProbeLoop(target: String, gen: Int) {
+        val t = Thread {
+            var lastLive = emptySet<String>()
+            var myRoomStreak = 0
+            val restricted = HashMap<String, Boolean>()
+            while (probeGen.get() == gen && targetCid == target) {
+                val live = probeOnce(target)
+                if (probeGen.get() != gen || targetCid != target) break
+                if (live.isEmpty()) {
+                    if (currentRoom == null) {
+                        emit(JSONObject().put("type", "track_status")
+                            .put("msg", "aguardando evento do IMQ..."))
+                    }
+                } else {
+                    myRoomStreak = if ("$target-1" in live) myRoomStreak + 1 else 0
+                    evaluateLive(target, live, lastLive, myRoomStreak, restricted)
+                    lastLive = live
                 }
-            } else if (currentRoom == null) {
-                emit(JSONObject().put("type", "track_status").put("msg", "aguardando evento do IMQ..."))
+                Thread.sleep(15_000)
             }
-            Thread.sleep(15_000)
         }
+        t.isDaemon = true
+        t.name = "radar-probe"
+        t.start()
+    }
+
+    private fun probeOnce(target: String): Set<String> {
+        val latch = CountDownLatch(1)
+        val ref = AtomicReference<List<String>>(emptyList())
+        imq.probeQueues(target, 25_000) { live ->
+            ref.set(live)
+            latch.countDown()
+        }
+        latch.await(30, TimeUnit.SECONDS)
+        return ref.get().toSet()
+    }
+
+    /**
+     * Decide a sala do alvo sem roster privado (a API do IMVU da 403 pra terceiros):
+     *  1) sala publica viva com o cid no roster -> certeza
+     *  2) sala que passou a existir entre dois probes -> alguem entrou nela agora
+     *  3) My Room (<cid>-1) viva em 2 probes seguidos -> heuristica forte
+     *  4) uma unica sala privada viva -> certeza pratica
+     * O evento edge:participants do IMQ continua sendo a fonte definitiva.
+     */
+    private fun evaluateLive(
+        target: String,
+        live: Set<String>,
+        lastLive: Set<String>,
+        myRoomStreak: Int,
+        restricted: MutableMap<String, Boolean>
+    ) {
+        if (currentRoom != null) return
+        val own = live.filter { it.startsWith("$target-") }
+        if (own.isEmpty()) return
+
+        // 1) roster publico diz a verdade
+        if (lastLive.isEmpty()) {
+            for (rid in own) {
+                if (isRestricted(rid, restricted)) continue
+                val people = try { api.roster(rid) } catch (_: Exception) { emptyList() }
+                if (people.any { it.cid == target }) {
+                    setCurrentRoom(rid, people, "roster")
+                    return
+                }
+            }
+        }
+
+        // 2) fila que apareceu entre probes (1 -> 0) = sala recem-ocupada
+        if (lastLive.isNotEmpty()) {
+            val fresh = own - lastLive
+            if (fresh.size == 1) {
+                setCurrentRoom(fresh.first(), via = "imq_new")
+                return
+            }
+        }
+
+        // 3) My Room viva em dois probes seguidos
+        if (myRoomStreak >= 2) {
+            setCurrentRoom("$target-1", via = "myroom")
+            return
+        }
+
+        // 4) unica sala privada viva
+        val priv = own.filter { isRestricted(it, restricted) }
+        if (priv.size == 1) {
+            setCurrentRoom(priv.first(), via = "imq_probe")
+        }
+    }
+
+    private fun isRestricted(rid: String, cache: MutableMap<String, Boolean>): Boolean {
+        cache[rid]?.let { return it }
+        val r = try { api.roomJson(rid).optBoolean("restricted", false) } catch (_: Exception) { false }
+        cache[rid] = r
+        return r
     }
 
     fun stopTrack() {
+        probeGen.incrementAndGet()
         synchronized(this) {
             targetCid = null
             targetNick = ""
@@ -287,6 +368,7 @@ object Tracker {
             currentRoom = null
             currentName = ""
             currentPrivacy = ""
+            currentDetectedBy = ""
             settingRoom = null
             roomSeq++
             synchronized(rosterLock) { roster.clear() }
@@ -374,7 +456,7 @@ object Tracker {
         }
     }
 
-    private fun setCurrentRoom(room: String, seed: List<Person>? = null) {
+    private fun setCurrentRoom(room: String, seed: List<Person>? = null, via: String = "imq") {
         synchronized(this) {
             if (currentRoom == room && currentName.isNotEmpty()) return
             if (settingRoom == room) return
@@ -385,6 +467,7 @@ object Tracker {
             currentRoom = room
             currentName = ""
             currentPrivacy = ""
+            currentDetectedBy = via
             synchronized(rosterLock) {
                 roster.clear()
                 targetCid?.let { roster[it] = targetNick }
@@ -442,6 +525,7 @@ object Tracker {
                 .put("room", room)
                 .put("name", currentName)
                 .put("privacy", currentPrivacy)
+                .put("detectedBy", currentDetectedBy)
                 .put("occupants", occupants)
                 .put("total", occupants.length())
         )
@@ -518,6 +602,7 @@ object Tracker {
         out.put("privacy", currentPrivacy)
         out.put("name", currentName)
         out.put("roomName", currentName)
+        out.put("detectedBy", currentDetectedBy)
         out.put("where", publicWhere(lastWhere))
         return out
     }

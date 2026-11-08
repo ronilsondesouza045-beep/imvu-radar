@@ -84,6 +84,7 @@ class ImqClient(private val onEvent: (JSONObject) -> Unit) {
         targetQueues.clear()
         for (n in 1..800) targetQueues.add("inv:/chat/chat-$target-$n")
         targetQueues.add("inv:/user/user-$target")
+        targetQueues.add("inv:/presence/presence-$target")
         extraQueues.clear()
         if (authed) resubscribe()
     }
@@ -196,7 +197,7 @@ class ImqClient(private val onEvent: (JSONObject) -> Unit) {
         if (keepalive != null) return
         keepalive = Thread {
             while (!stopped) {
-                Thread.sleep(2000)
+                Thread.sleep(30_000)
                 if (authed) resubscribe()
             }
         }.apply { isDaemon = true; start() }
@@ -228,18 +229,27 @@ class ImqClient(private val onEvent: (JSONObject) -> Unit) {
     }
 
     /**
-     * Probe de liveness: conexao NOVA mede status 0/1 de chat-<alvo>-1..800.
-     * status 0 = fila viva = tem gente dentro daquela sala AGORA.
+     * Probe de liveness: mede status 0/1 de chat-<alvo>-1..800 NA MESMA conexao.
+     * status 0 = fila existe (sala ativa/recente). Nao abre conexao nova, entao
+     * nao derruba a sessao do tracker.
      */
     fun probeQueues(target: String, timeoutMs: Long = 25_000, callback: (List<String>) -> Unit) {
+        if (!connected || !authed || ws == null) {
+            callback(emptyList())
+            return
+        }
         val queues = (1..800).map { "inv:/chat/chat-$target-$it" }
         val live = java.util.Collections.synchronizedList(mutableListOf<String>())
         val remaining = java.util.concurrent.atomic.AtomicInteger(queues.size)
         val done = java.util.concurrent.atomic.AtomicBoolean(false)
-        val finish = {
-            if (done.compareAndSet(false, true)) callback(live.toList())
-        }
         val pairs = queues.map { q -> q to nextOp() }
+        val finish = {
+            if (done.compareAndSet(false, true)) {
+                // limpa callbacks pendentes pra nao vazar memoria entre probes
+                for ((_, op) in pairs) pending.remove(op)
+                callback(live.toList())
+            }
+        }
         for ((q, op) in pairs) {
             pending[op] = { status ->
                 if (status == 0) live.add(q.removePrefix("inv:/chat/chat-"))
@@ -308,6 +318,38 @@ class ImqClient(private val onEvent: (JSONObject) -> Unit) {
                     }
                 } else {
                     pending.remove(op)?.invoke(m.optInt("status", 1))
+                }
+            }
+            "msg_g2c_state_change" -> {
+                // presenca do alvo (IMVU Next publica estado na fila presence-<cid>).
+                // Se vier um room/location, e a sala atual sem precisar de roster.
+                val queue = m.optString("queue", "")
+                val tc = targetCid ?: return
+                if (!queue.contains("presence-$tc")) return
+                val props = JSONObject()
+                val arr = m.optJSONArray("properties") ?: JSONArray()
+                for (i in 0 until arr.length()) {
+                    val p = arr.optJSONObject(i) ?: continue
+                    val k = p.optString("key", "")
+                    if (k.isEmpty()) continue
+                    val v = try {
+                        String(Base64.decode(p.optString("value", ""), Base64.DEFAULT))
+                    } catch (_: Exception) {
+                        p.optString("value", "")
+                    }
+                    props.put(k, v)
+                }
+                onEvent(JSONObject().put("type", "presence_state").put("props", props))
+                val room = listOf("room", "room_id", "location", "current_room", "chat_room")
+                    .map { props.optString(it, "") }
+                    .firstOrNull { Regex("^\\d+-\\d+$").matches(it) }
+                if (room != null) {
+                    onEvent(
+                        JSONObject().put("type", "presence")
+                            .put("action", "updated")
+                            .put("room", room)
+                            .put("cid", tc)
+                    )
                 }
             }
             "msg_g2c_send_message" -> {

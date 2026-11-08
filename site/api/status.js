@@ -1,17 +1,17 @@
-import { readState, writeState, body } from "./_store.js";
+import { readFile, writeFile, body, noStore } from "./_store.js";
 
 export default async function handler(req, res) {
+  noStore(res);
   try {
     if (req.method === "GET") {
-      const state = await readState();
-      res.status(200).json(state.status || {});
+      const state = await readFile("status.json");
+      res.status(200).json(state || {});
       return;
     }
     if (req.method === "POST") {
       const b = body(req);
-      const state = await readState();
-      state.status = { ...b, updated: Date.now() };
-      await writeState(state);
+      const state = { ...b, updated: Date.now() };
+      await writeFile("status.json", state);
       res.status(200).json({ ok: true });
       return;
     }

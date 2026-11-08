@@ -1,19 +1,24 @@
-import { readState, writeState, body } from "./_store.js";
+import { readFile, writeFile, body, noStore } from "./_store.js";
 
 export default async function handler(req, res) {
+  noStore(res);
   try {
     if (req.method === "GET") {
-      const state = await readState();
-      res.status(200).json(state.command || null);
+      const command = await readFile("command.json");
+      // comando velho (mais de 5 min) nao interessa mais
+      if (command && command.created && Date.now() - command.created > 300_000) {
+        res.status(200).json(null);
+        return;
+      }
+      res.status(200).json(command || null);
       return;
     }
     if (req.method === "POST") {
       const b = body(req);
       if (b.ack) {
-        const state = await readState();
-        if (state.command && state.command.id === b.ack) {
-          state.command = null;
-          await writeState(state);
+        const command = await readFile("command.json");
+        if (!command || command.id === b.ack) {
+          await writeFile("command.json", {});
         }
         res.status(200).json({ ok: true });
         return;
@@ -23,15 +28,13 @@ export default async function handler(req, res) {
         res.status(400).json({ error: "action" });
         return;
       }
-      const state = await readState();
       const command = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         action,
         nick: String(b.nick || ""),
         created: Date.now(),
       };
-      state.command = command;
-      await writeState(state);
+      await writeFile("command.json", command);
       res.status(200).json({ ok: true, command });
       return;
     }

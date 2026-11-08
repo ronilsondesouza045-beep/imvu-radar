@@ -532,6 +532,38 @@ class ImvuApi {
         return out
     }
 
+    /**
+     * Fonte externa opcional: salas privadas que o indice do catvu ja catalogou
+     * para o nick. Nao substitui o IMQ - serve de dica quando o alvo ja esta
+     * dentro da sala no momento em que o rastreio comeca.
+     */
+    fun catvuRooms(nick: String): List<String> {
+        if (nick.isBlank()) return emptyList()
+        return try {
+            val u = "https://catvu.live/api/private-room/find?username=" +
+                java.net.URLEncoder.encode(nick, "UTF-8")
+            val req = Request.Builder().url(u)
+                .header("User-Agent", Config.UA)
+                .header("Accept", "application/json")
+                .get()
+                .build()
+            http.newCall(req).execute().use { r ->
+                if (!r.isSuccessful) return emptyList()
+                val j = JSONObject(r.body?.string() ?: "{}")
+                val arr = j.optJSONArray("rooms") ?: return emptyList()
+                val out = ArrayList<String>()
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val rid = o.optString("roomId", o.optString("room_id", ""))
+                    if (rid.isNotEmpty()) out.add(rid)
+                }
+                out
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
     /** busca profunda: 1 salto a partir das pessoas que estao nas salas conhecidas (TODAS as salas achadas) */
     fun deepScan(
         targetCid: String,
