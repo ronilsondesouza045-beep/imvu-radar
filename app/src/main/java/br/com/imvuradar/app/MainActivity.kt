@@ -16,15 +16,17 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.webkit.WebViewAssetLoader
 import br.com.imvuradar.app.core.Tracker
 import br.com.imvuradar.app.update.Updater
 import org.json.JSONObject
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var web: WebView
-    private var pendingUpdateUrl: String? = null
+    private var pendingApk: File? = null
 
     private val notifPerm = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -85,6 +87,14 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         Tracker.start()
+        // voltou da tela de "instalar apps desconhecidos": instala o APK baixado
+        val apk = pendingApk
+        if (apk != null && apk.exists() &&
+            (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls())
+        ) {
+            pendingApk = null
+            installApk(apk)
+        }
     }
 
     private fun askNotifications() {
@@ -115,14 +125,46 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun doUpdate(url: String) {
-        pendingUpdateUrl = url
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+        pushToast("baixando atualização...")
+        Updater.download(this, url) { file ->
+            runOnUiThread {
+                if (file == null) {
+                    pushToast("falha no download ou assinatura inválida")
+                    return@runOnUiThread
+                }
+                installApk(file)
             }
-        } catch (_: Exception) {
         }
-        Updater.downloadAndInstall(this, url) { msg -> runOnUiThread { pushToast(msg) } }
+    }
+
+    private fun installApk(apk: File) {
+        // Android exige permissao explicita para instalar APK fora da loja.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !packageManager.canRequestPackageInstalls()
+        ) {
+            pendingApk = apk
+            try {
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+                pushToast("libere instalar apps desconhecidos e volte ao app")
+            } catch (e: Exception) {
+                pushToast("erro ao abrir configurações: ${e.message}")
+            }
+            return
+        }
+        try {
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", apk)
+            val i = Intent(Intent.ACTION_VIEW)
+                .setDataAndType(uri, "application/vnd.android.package-archive")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(i)
+        } catch (e: Exception) {
+            pushToast("erro ao abrir instalador: ${e.message}")
+        }
     }
 
     private fun pushToast(msg: String) {

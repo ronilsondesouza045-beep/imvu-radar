@@ -1,12 +1,9 @@
 package br.com.imvuradar.app.update
 
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.Signature
-import android.net.Uri
 import android.os.Build
-import androidx.core.content.FileProvider
 import br.com.imvuradar.app.BuildConfig
 import br.com.imvuradar.app.Config
 import okhttp3.OkHttpClient
@@ -108,13 +105,23 @@ object Updater {
         }
     }
 
-    fun downloadAndInstall(ctx: Context, url: String, onDone: (String) -> Unit) {
+    /**
+     * Baixa e valida a assinatura. NAO inicia activity daqui: o instalador
+     * precisa ser aberto na UI thread da Activity (senao o Android bloqueia
+     * o background activity launch e nada aparece).
+     */
+    fun download(ctx: Context, url: String, onDone: (File?) -> Unit) {
         pool.submit {
             try {
                 val dir = File(ctx.getExternalFilesDir(null) ?: ctx.filesDir, "updates").apply { mkdirs() }
                 val out = File(dir, "update.apk")
+                if (out.exists()) out.delete()
                 val req = Request.Builder().url(url).header("User-Agent", Config.UA).build()
                 client.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) {
+                        onDone(null)
+                        return@submit
+                    }
                     val body = resp.body ?: throw IllegalStateException("sem corpo")
                     body.byteStream().use { input ->
                         out.outputStream().use { o -> input.copyTo(o) }
@@ -122,22 +129,13 @@ object Updater {
                 }
                 if (!verifySignature(ctx, out)) {
                     out.delete()
-                    onDone("atualizacao recusada: assinatura invalida")
+                    onDone(null)
                     return@submit
                 }
-                install(ctx, out)
-                onDone("instalando...")
+                onDone(out)
             } catch (e: Exception) {
-                onDone("erro: " + (e.message ?: "?"))
+                onDone(null)
             }
         }
-    }
-
-    private fun install(ctx: Context, apk: File) {
-        val uri: Uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", apk)
-        val i = Intent(Intent.ACTION_VIEW)
-            .setDataAndType(uri, "application/vnd.android.package-archive")
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-        ctx.startActivity(i)
     }
 }
