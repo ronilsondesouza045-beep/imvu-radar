@@ -1,8 +1,6 @@
 package br.com.imvuradar.app.core
 
-import br.com.imvuradar.app.App
 import br.com.imvuradar.app.Config
-import br.com.imvuradar.app.RoomNames
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -342,19 +340,14 @@ class ImvuApi {
     fun roomLabel(rid: String): Pair<String, String> {
         val m = roomJson(rid)
         val n = rid.substringAfterLast('-', "0")
-        val alias = try { RoomNames.get(App.ctx, rid) } catch (_: Exception) { "" }
         val cached = _roomNames[rid] ?: ""
         if (m.optBoolean("restricted")) {
-            val name = alias.ifBlank {
-                cached.ifBlank {
-                    if (n == "1") "My Room" else "Sala privada $n"
-                }
+            val name = cached.ifBlank {
+                if (n == "1") "My Room" else "Sala privada $n"
             }
             return Pair(name, "PRIVADA")
         }
-        val name = alias.ifBlank {
-            m.optString("name", "").ifBlank { cached.ifBlank { rid } }
-        }
+        val name = m.optString("name", "").ifBlank { cached.ifBlank { rid } }
         val privacy = if (m.optString("privacy") == "private") "PRIVADA" else "PUBLICA"
         return Pair(name, privacy)
     }

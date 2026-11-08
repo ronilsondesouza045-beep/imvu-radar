@@ -126,7 +126,7 @@ const V={
     <input id="nick" placeholder="nick / avatar" autocapitalize="off" autocorrect="off">
     <button onclick="act('where')">Rastrear</button><div id="out"></div></div>`,
   privada:()=>`<div class="card" style="border-color:rgba(255,179,71,.35)"><h1 style="color:#ffcf87">Rastreio em tempo real</h1>
-    <p class="sub">IMQ: sala atual, nome, privacidade e ocupantes — privado e público separados</p>
+    <p class="sub">IMQ: sala privada atual e ocupantes</p>
     <input id="trackNick" placeholder="nick / avatar" autocapitalize="off" autocorrect="off">
     <div class="row2"><button onclick="act('track')">Iniciar</button><button class="ghost" onclick="act('stop')">Parar</button></div>
     <div class="hero" id="trackHero" style="display:none;margin-top:12px">
@@ -139,30 +139,13 @@ const V={
       <div id="privRoom" style="margin-top:8px"></div>
       <div id="privOcc" class="trackline" style="margin-top:8px"></div>
     </div>
-    <div class="card" id="pubCard" style="margin-top:10px;border-color:rgba(46,230,168,.35)">
-      <div class="tag pub">SALA PÚBLICA</div>
-      <div id="pubRoom" style="margin-top:8px"></div>
-      <div id="pubOcc" class="trackline" style="margin-top:8px"></div>
-    </div>
-    <div class="card" style="margin-top:10px">
-      <h2 style="margin-top:0">Nome da sala</h2>
-      <p class="sub">a API não expõe nome de sala privada de terceiro; salve um apelido para o ID atual</p>
-      <input id="roomNameInput" placeholder="ex: The Bunny Room" autocapitalize="off" autocorrect="off">
-      <button class="ghost" onclick="saveRoomName()">Salvar nome</button>
-    </div>
     <h2>Movimento da sala</h2>
     <div id="trackLog" class="list"></div>
   </div>`,
   ajustes:()=>`<div class="card"><h1>Ajustes</h1><p class="sub">conexão e atualização</p>
     <button class="ghost" onclick="act('status')">Ver status</button>
     <div class="row2" style="margin-top:9px"><button onclick="act('update')">Verificar atualização</button></div>
-    <div id="out3"></div>
-    <h2>Conta</h2>
-    <p class="sub">usa a conta padrão automaticamente. Se quiser monitorar com outra conta, troque aqui (fica cifrada no aparelho).</p>
-    <p class="sub" style="margin-top:8px">Para o nome automático das <b>suas</b> salas privadas, use sua própria conta: o bot não enxerga nome de sala privada de terceiro (a API devolve 403).</p>
-    <input id="cu" placeholder="avatar / e-mail" autocapitalize="off" autocorrect="off">
-    <input id="cp" type="password" placeholder="senha">
-    <button class="ghost" onclick="trocaConta()">Usar outra conta</button><div id="out4"></div></div>`
+    <div id="out3"></div></div>`
 };
 
 function render(){
@@ -176,7 +159,6 @@ let lastNick='';
 let trackNick='';
 let lastTrackTarget=null;
 let lastPrivacy='';
-let currentRoomId='';
 
 function act(a){
   if(a==='where'){
@@ -238,15 +220,11 @@ function nowTime(){ try{ return new Date().toLocaleTimeString('pt-BR'); }catch(_
 function clearTrackUI(){
   const pr=$('#privRoom'); if(pr) pr.innerHTML='';
   const po=$('#privOcc'); if(po) po.innerHTML='';
-  const ur=$('#pubRoom'); if(ur) ur.innerHTML='';
-  const uo=$('#pubOcc'); if(uo) uo.innerHTML='';
   const l=$('#trackLog'); if(l) l.innerHTML='';
   const hero=$('#trackHero'); if(hero) hero.style.display='none';
   const av=$('#trackAvatar'); if(av) av.src='';
-  const inp=$('#roomNameInput'); if(inp) inp.value='';
   lastTrackTarget=null;
   lastPrivacy='';
-  currentRoomId='';
 }
 
 function logTrack(html,cls){
@@ -260,9 +238,10 @@ function logTrack(html,cls){
 }
 
 function setOccupants(list,total){
+  if(lastPrivacy!=='PRIVADA') return;
   const nomes=(list||[]).map(o=>o.nick||o.username||o.cid).filter(Boolean);
   const t=(total!=null)?total:nomes.length;
-  const o = lastPrivacy==='PRIVADA' ? $('#privOcc') : (lastPrivacy==='PUBLICA' ? $('#pubOcc') : null);
+  const o=$('#privOcc');
   if(o) o.innerHTML='<span class="muted">['+nowTime()+']</span> OCUPANTES ATUAIS: '+(nomes.length?esc(nomes.join(', ')):'(ninguem)')+' (Total: '+t+')';
 }
 
@@ -273,17 +252,6 @@ function toast(msg){
   el.style.opacity='1';
   clearTimeout(el._t);
   el._t=setTimeout(function(){ el.style.opacity='0'; }, 4500);
-}
-
-function saveRoomName(){
-  const inp=$('#roomNameInput');
-  const name=(inp&&inp.value||'').trim();
-  if(!currentRoomId){ toast('primeiro localize a sala'); return; }
-  if(!name){ toast('digite o nome da sala'); return; }
-  try{
-    Radar.setRoomName(currentRoomId,name);
-    toast('nome salvo para '+currentRoomId);
-  }catch(_){ toast('bridge indisponivel'); }
 }
 
 function showUpdate(d){
@@ -358,36 +326,38 @@ window.__radarEvent = function(e){
     const name=e.name||e.room||'';
     const priv=e.privacy||'?';
     lastPrivacy=priv;
-    currentRoomId=e.room||'';
-    const inp=$('#roomNameInput');
-    if(inp && name && !/^Sala (privada )?\d+$/.test(name)) inp.value=name;
-    const isPriv=(priv==='PRIVADA');
-    const active = isPriv ? $('#privRoom') : $('#pubRoom');
-    const inactive = isPriv ? $('#pubRoom') : $('#privRoom');
-    const inactiveOcc = isPriv ? $('#pubOcc') : $('#privOcc');
-    if(inactive) inactive.innerHTML='<div class="empty">—</div>';
-    if(inactiveOcc) inactiveOcc.innerHTML='';
-    if(active) active.innerHTML='<div class="trackline"><span class="muted">['+nowTime()+']</span> ALVO AQUI: '+esc(nick)+' está na sala "'+esc(name)+'" (ID: '+esc(e.room)+') - '+esc(priv)+'</div>';
+    const r=$('#privRoom');
+    const o=$('#privOcc');
+    if(priv==='PRIVADA'){
+      if(r) r.innerHTML='<div class="trackline"><span class="muted">['+nowTime()+']</span> ALVO AQUI: '+esc(nick)+' está na sala "'+esc(name)+'" (ID: '+esc(e.room)+') - '+esc(priv)+'</div>';
+      setOccupants(e.occupants||[], e.total);
+    } else {
+      if(r) r.innerHTML='<div class="empty">Alvo em sala pública — veja a aba Onde.</div>';
+      if(o) o.innerHTML='';
+    }
     if(tg.avatar){ const av=$('#trackAvatar'); if(av) av.src=tg.avatar; }
-    setOccupants(e.occupants||[], e.total);
   }
   else if(t==='track_occupants'){
     setOccupants(e.occupants||[], e.total);
   }
   else if(t==='track_join'){
-    const tipo = lastPrivacy==='PRIVADA'?'[PRIVADA]':(lastPrivacy==='PUBLICA'?'[PÚBLICA]':'');
-    logTrack('<span class="muted">['+nowTime()+']</span> '+tipo+' ENTROU NA SALA: '+esc(e.nick||e.cid),'in');
+    if(lastPrivacy==='PRIVADA'){
+      logTrack('<span class="muted">['+nowTime()+']</span> ENTROU NA SALA: '+esc(e.nick||e.cid),'in');
+    }
   }
   else if(t==='track_leave'){
-    const tipo = lastPrivacy==='PRIVADA'?'[PRIVADA]':(lastPrivacy==='PUBLICA'?'[PÚBLICA]':'');
-    logTrack('<span class="muted">['+nowTime()+']</span> '+tipo+' SAIU DA SALA: '+esc(e.nick||e.cid),'out');
+    if(lastPrivacy==='PRIVADA'){
+      logTrack('<span class="muted">['+nowTime()+']</span> SAIU DA SALA: '+esc(e.nick||e.cid),'out');
+    }
   }
   else if(t==='track_left'){
-    const isPriv=(lastPrivacy==='PRIVADA');
-    const active = isPriv ? $('#privRoom') : (lastPrivacy==='PUBLICA' ? $('#pubRoom') : null);
-    const activeOcc = isPriv ? $('#privOcc') : (lastPrivacy==='PUBLICA' ? $('#pubOcc') : null);
-    if(active) active.innerHTML='<div class="trackline"><span class="muted">['+nowTime()+']</span> SAIU: O alvo saiu da sala de ID '+esc(e.room)+'</div>';
-    if(activeOcc) activeOcc.innerHTML='';
+    if(lastPrivacy==='PRIVADA'){
+      const r=$('#privRoom');
+      if(r) r.innerHTML='<div class="trackline"><span class="muted">['+nowTime()+']</span> SAIU: O alvo saiu da sala de ID '+esc(e.room)+'</div>';
+      const o=$('#privOcc'); if(o) o.innerHTML='';
+    } else {
+      const r=$('#privRoom'); if(r) r.innerHTML='';
+    }
   }
   else if(t==='track_stopped'){
     const st=$('#trackStatus'); if(st) st.textContent='rastreio parado';
@@ -415,15 +385,6 @@ function showLogin(msg){
    '<button onclick="Radar.setCredentials(document.getElementById(\'u\').value.trim(),document.getElementById(\'p\').value);document.getElementById(\'modal\').classList.remove(\'on\')">Conectar</button>';
 }
 
-function trocaConta(){
-  const u=(document.getElementById('cu')||{}).value||'';
-  const p=(document.getElementById('cp')||{}).value||'';
-  const o=document.getElementById('out4');
-  if(!u||!p){ if(o) o.innerHTML='<div class="muted" style="font-size:13px">preenche os dois campos</div>'; return; }
-  if(o) o.innerHTML='<div class="muted" style="font-size:13px">conectando…</div>';
-  Radar.setCredentials(u.trim(),p);
-  setTimeout(()=>{ const o2=document.getElementById('out4'); if(o2) o2.innerHTML='<div class="muted" style="font-size:13px">conta trocada - conectando…</div>'; },700);
-}
 
 render();
 setInterval(()=>{

@@ -3,7 +3,6 @@ package br.com.imvuradar.app.core
 import br.com.imvuradar.app.App
 import br.com.imvuradar.app.Config
 import br.com.imvuradar.app.Notifications
-import br.com.imvuradar.app.RoomNames
 import br.com.imvuradar.app.SecureStore
 import org.json.JSONArray
 import org.json.JSONObject
@@ -277,20 +276,6 @@ object Tracker {
         }
     }
 
-    /** apelido manual para sala privada (a API 403 nao devolve o nome) */
-    fun setRoomName(rid: String, name: String) {
-        if (rid.isBlank() || name.isBlank()) return
-        try { RoomNames.set(App.ctx, rid, name) } catch (_: Exception) { }
-        pool.submit {
-            if (currentRoom == rid) {
-                val label = api.roomLabel(rid)
-                currentName = label.first
-                currentPrivacy = label.second
-                emitTrackRoom()
-            }
-        }
-    }
-
     fun stopTrack() {
         synchronized(this) {
             targetCid = null
@@ -323,6 +308,7 @@ object Tracker {
                 }
                 "deleted", "left" -> {
                     if (currentRoom == room) {
+                        val eraPrivada = currentPrivacy == "PRIVADA"
                         synchronized(this) {
                             roomSeq++
                             currentRoom = null
@@ -332,10 +318,12 @@ object Tracker {
                             synchronized(rosterLock) { roster.clear() }
                         }
                         emit(JSONObject().put("type", "track_left").put("room", room))
-                        Notifications.alert(
-                            App.ctx, "SAIU DA SALA",
-                            "$targetNick saiu da sala de ID $room"
-                        )
+                        if (eraPrivada) {
+                            Notifications.alert(
+                                App.ctx, "SAIU DA SALA",
+                                "$targetNick saiu da sala de ID $room"
+                            )
+                        }
                     }
                 }
             }
@@ -427,12 +415,13 @@ object Tracker {
         imq.subscribeRoom(room)
         emitTrackRoom()
         emitOccupants()
-        // notificacao no celular: alvo ja estava / entrou / mudou de sala
-        val tipo = if (currentPrivacy == "PRIVADA") "SALA PRIVADA" else "SALA PÚBLICA"
-        Notifications.alert(
-            App.ctx, tipo,
-            "$targetNick está na sala \"$currentName\" (ID: $room)"
-        )
+        // notificacao no celular somente para sala privada (a publica fica na aba Onde)
+        if (currentPrivacy == "PRIVADA") {
+            Notifications.alert(
+                App.ctx, "SALA PRIVADA",
+                "$targetNick está na sala \"$currentName\" (ID: $room)"
+            )
+        }
         synchronized(this) { if (settingRoom == room) settingRoom = null }
     }
 
