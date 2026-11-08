@@ -207,9 +207,6 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun status(): String = Tracker.status().toString()
 
-        @JavascriptInterface
-        fun siteToken(): String = Config.SITE_TOKEN
-
         /** render do IMVU com sessao -> data URI (imagens do imvu pedem login) */
         @JavascriptInterface
         fun fetchImage(url: String, cb: String) {

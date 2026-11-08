@@ -1,10 +1,6 @@
-import { readState, writeState, auth, body } from "./_store.js";
+import { readState, writeState, body } from "./_store.js";
 
 export default async function handler(req, res) {
-  if (!auth(req)) {
-    res.status(401).json({ error: "unauthorized" });
-    return;
-  }
   try {
     if (req.method === "GET") {
       const state = await readState();
@@ -14,7 +10,7 @@ export default async function handler(req, res) {
     if (req.method === "POST") {
       const b = body(req);
       const action = String(b.action || "");
-      if (!["track", "stop"].includes(action)) {
+      if (!["track", "stop", "where"].includes(action)) {
         res.status(400).json({ error: "action" });
         return;
       }

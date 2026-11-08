@@ -6,12 +6,6 @@ function env(name) {
   return v;
 }
 
-function auth(req) {
-  const expected = process.env.DASHBOARD_TOKEN || "";
-  const got = req.headers.authorization || "";
-  return expected.length > 0 && got === "Bearer " + expected;
-}
-
 async function readState() {
   const id = env("GH_GIST_ID");
   const token = env("GH_TOKEN");
@@ -62,4 +56,4 @@ function body(req) {
   return req.body;
 }
 
-export { readState, writeState, auth, body };
+export { readState, writeState, body };

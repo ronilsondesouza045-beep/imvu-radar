@@ -110,7 +110,7 @@ window.__radarImage=function(id,data){
   imgCache[id]=data;
   document.querySelectorAll('img[data-imgid="'+id+'"]').forEach(function(el){ if(data) el.src=data; });
 };
-const TABS=[['onde','🔎','Onde'],['privada','🔒','Privada'],['painel','📡','Painel'],['ajustes','⚙','Ajustes']];
+const TABS=[['onde','🔎','Onde'],['privada','🔒','Privada'],['ajustes','⚙','Ajustes']];
 let TAB=(location.hash||'').replace('#','');
 if(!TABS.some(t=>t[0]===TAB)) TAB='onde';
 
@@ -143,24 +143,6 @@ const V={
     <h2>Movimento da sala</h2>
     <div id="trackLog" class="list"></div>
   </div>`,
-  painel:()=>`<div class="card"><h1>Painel do site</h1>
-    <p class="sub">conectado ao APK: status, comandos e nomes de sala</p>
-    <div id="siteStatus" class="mono" style="font-size:12px;line-height:1.7"></div>
-    <h2>Comando no APK</h2>
-    <input id="siteNick" placeholder="nick do alvo" autocapitalize="off" autocorrect="off">
-    <div class="row2"><button onclick="siteCmd('track')">Iniciar no APK</button><button class="ghost" onclick="siteCmd('stop')">Parar</button></div>
-    <div id="siteCmdOut" class="muted" style="font-size:12px"></div>
-    <h2>Nome de sala</h2>
-    <input id="siteRid" placeholder="roomId (ex: 140495487-425)" autocapitalize="off" autocorrect="off">
-    <input id="siteRoomName" placeholder="nome da sala" autocapitalize="off" autocorrect="off">
-    <button class="ghost" onclick="siteSaveRoom()">Salvar nome no site</button>
-    <div id="siteRoomOut" class="muted" style="font-size:12px"></div>
-    <h2>Token do site</h2>
-    <p class="sub">no APK o token vem da ponte; no navegador cole o token do dashboard</p>
-    <input id="siteTokenInput" placeholder="token do dashboard" autocapitalize="off" autocorrect="off">
-    <button class="ghost" onclick="saveSiteToken()">Salvar token</button>
-    <div id="siteVersion" class="muted" style="font-size:12px;margin-top:8px"></div>
-  </div>`,
   ajustes:()=>`<div class="card"><h1>Ajustes</h1><p class="sub">conexão e atualização</p>
     <button class="ghost" onclick="act('status')">Ver status</button>
     <div class="row2" style="margin-top:9px"><button onclick="act('update')">Verificar atualização</button></div>
@@ -172,10 +154,7 @@ function render(){
   $('#app').innerHTML = V[TAB]();
   if(TAB==='onde'){ const n=$('#nick'); if(n) n.value=lastNick||''; }
   if(TAB==='privada'){ const n=$('#trackNick'); if(n) n.value=trackNick||''; }
-  if(TAB==='painel'){
-    const ti=$('#siteTokenInput'); if(ti) ti.value=localStorage.getItem('imvu_site_token')||'';
-    loadSiteStatus();
-  }
+  if(!window.Radar && (TAB==='onde' || TAB==='privada')) loadRemoteStatus();
 }
 
 let lastNick='';
@@ -183,39 +162,70 @@ let trackNick='';
 let lastTrackTarget=null;
 let lastPrivacy='';
 
-function act(a){
+async function act(a){
   if(a==='where'){
     lastNick=($('#nick').value||'').trim();
     if(!lastNick){ load('digite o nick'); return; }
-    load('rastreando…');
-    try{ Radar.where(lastNick); }catch(e){ load('bridge indisponivel'); }
+    if(window.Radar){
+      load('rastreando…');
+      try{ Radar.where(lastNick); }catch(e){ load('bridge indisponivel'); }
+    } else {
+      load('buscando no APK…');
+      try{ await api('/api/command',{method:'POST',body:JSON.stringify({action:'where',nick:lastNick})}); toast('busca enviada ao APK'); }catch(e){ load('site/APK offline'); }
+    }
   }
   else if(a==='track'){
     trackNick=($('#trackNick').value||'').trim();
-    if(!trackNick){ $('#trackStatus').textContent='digite o nick'; return; }
+    if(!trackNick){ const st=$('#trackStatus'); if(st) st.textContent='digite o nick'; return; }
     clearTrackUI();
-    $('#trackStatus').textContent='iniciando rastreio…';
-    try{ Radar.track(trackNick); }catch(e){ $('#trackStatus').textContent='bridge indisponivel'; }
+    const st=$('#trackStatus'); if(st) st.textContent='iniciando rastreio…';
+    if(window.Radar){
+      try{ Radar.track(trackNick); }catch(e){ if(st) st.textContent='bridge indisponivel'; }
+    } else {
+      try{ await api('/api/command',{method:'POST',body:JSON.stringify({action:'track',nick:trackNick})}); toast('comando enviado ao APK'); }catch(e){ toast('erro: '+e.message); }
+    }
   }
   else if(a==='stop'){
-    try{ Radar.stopTrack(); }catch(_){}
-    $('#trackStatus').textContent='rastreio parado';
+    if(window.Radar){ try{ Radar.stopTrack(); }catch(_){} }
+    else { try{ await api('/api/command',{method:'POST',body:JSON.stringify({action:'stop',nick:''})}); toast('parar enviado ao APK'); }catch(e){} }
+    const st=$('#trackStatus'); if(st) st.textContent='rastreio parado';
     clearTrackUI();
   }
   else if(a==='status'){
-    try{
-      const s=JSON.parse(Radar.status());
-      const o=out('out3');
-      if(o) o.innerHTML='<div class="mono" style="font-size:12.5px;line-height:1.7">conectado: '+(s.loggedIn?'sim':'nao')+
-        '<br>canal IMQ: '+(s.imq?'ativo':'reconectando')+
-        '<br>alvo: '+esc(s.targetNick||'-')+
-        '<br>sala: '+esc(s.room||'-')+' '+esc(s.roomName||'')+
-        '<br>ocupantes: '+(s.occupants||0)+'</div>';
-    }catch(e){ load('erro no status','out3'); }
+    if(window.Radar){
+      try{
+        const s=JSON.parse(Radar.status());
+        const o=out('out3');
+        if(o) o.innerHTML='<div class="mono" style="font-size:12.5px;line-height:1.7">conectado: '+(s.loggedIn?'sim':'nao')+
+          '<br>canal IMQ: '+(s.imq?'ativo':'reconectando')+
+          '<br>alvo: '+esc(s.targetNick||'-')+
+          '<br>sala: '+esc(s.room||'-')+' '+esc(s.roomName||'')+
+          '<br>ocupantes: '+(s.occupants||0)+'</div>';
+      }catch(e){ load('erro no status','out3'); }
+    } else {
+      try{
+        const s=await api('/api/status');
+        const o=out('out3');
+        if(o) o.innerHTML='<div class="mono" style="font-size:12.5px;line-height:1.7">APK: '+(s.imq?'online':'offline')+
+          '<br>alvo: '+esc(s.targetNick||'-')+
+          '<br>sala: '+esc(s.room||'-')+' '+esc(s.roomName||'')+
+          '<br>tipo: '+esc(s.privacy||'-')+
+          '<br>ocupantes: '+(s.occupants||0)+'</div>';
+      }catch(e){ load('site/APK offline','out3'); }
+    }
   }
   else if(a==='update'){
-    load('consultando…','out3');
-    try{ Radar.checkUpdate(); }catch(e){ load('bridge indisponivel','out3'); }
+    if(window.Radar){
+      load('consultando…','out3');
+      try{ Radar.checkUpdate(); }catch(e){ load('bridge indisponivel','out3'); }
+    } else {
+      load('consultando…','out3');
+      try{
+        const v=await fetch('/api/version').then(r=>r.json());
+        const o=out('out3');
+        if(o) o.innerHTML=v.ok?'<div class="muted" style="font-size:13px">APK latest: '+esc(v.tag)+'</div>':'<div class="muted" style="font-size:13px">versao indisponivel</div>';
+      }catch(e){ load('erro ao consultar','out3'); }
+    }
   }
 }
 
@@ -409,50 +419,66 @@ function showLogin(msg){
 }
 
 
-function siteToken(){
-  try{ if(window.Radar && Radar.siteToken) return Radar.siteToken(); }catch(_){}
-  return localStorage.getItem('imvu_site_token')||'';
-}
-
 async function api(path, opts){
   opts=opts||{};
-  const headers={'Content-Type':'application/json'};
-  const t=siteToken();
-  if(t) headers['Authorization']='Bearer '+t;
-  const r=await fetch(path,{...opts,headers});
+  const r=await fetch(path,{...opts,headers:{'Content-Type':'application/json'}});
   if(!r.ok) throw new Error('HTTP '+r.status);
   return r.json();
 }
 
-async function loadSiteStatus(){
-  const el=$('#siteStatus'); if(!el) return;
+function renderRemoteWhere(d){
+  const p=d.profile||{}, rooms=d.rooms||[];
+  const o=out(); if(!o) return;
+  const badge=p.online?'<span class="tag on">ONLINE</span>':((p.is_vip||p.is_ap)?'<span class="tag off">PRESENÇA OCULTA</span>':'<span class="tag off">NÃO VISTO</span>');
+  let h='<div class="hero" style="margin-top:16px"><div class="picwrap">'+
+    '<img class="pic" src="'+esc(p.avatar||'')+'" alt=""></div>'+
+    '<div style="min-width:0"><div class="nm">'+esc(p.display_name||p.username)+'</div>'+
+    '<div class="muted mono" style="font-size:12px">'+esc(p.username)+' · cid '+esc(p.cid)+'</div>'+
+    '<div class="badges">'+badge+(p.is_vip?'<span class="tag vip">VIP</span>':'')+(p.is_ap?'<span class="tag vip">AP</span>':'')+'</div></div></div>';
+  if(rooms.length){
+    h+='<h2 style="margin-top:16px">Salas</h2>';
+    rooms.forEach(function(r){
+      h+='<div class="card" style="margin-bottom:12px">';
+      if(r.render) h+='<div class="roomcover"><img src="'+esc(r.render)+'"><div class="ov"><div class="rm">'+esc(r.name||r.roomId)+'</div>'+
+        '<div class="muted mono" style="font-size:11.5px">['+esc(r.roomId)+']</div></div></div>';
+      else h+='<div class="rm">'+esc(r.name||r.roomId)+' <span class="muted mono">['+esc(r.roomId)+']</span></div>';
+      h+='<div class="badges" style="margin:8px 0">'+tagRoom(r.privacy)+(r.owner?'<span class="muted">dono: '+esc(r.owner)+'</span>':'')+'</div>';
+      h+=peopleGrid(r.peopleList||[],'ninguem visivel');
+      h+='</div>';
+    });
+  } else {
+    h+='<div class="card" style="margin-top:12px"><b>Não achei nas listas públicas</b><p class="sub" style="margin:8px 0 0">Use o APK para a busca completa.</p></div>';
+  }
+  o.innerHTML=h;
+}
+
+async function loadRemoteStatus(){
+  if(window.Radar) return;
   try{
     const s=await api('/api/status');
-    el.innerHTML='alvo: '+esc(s.targetNick||'-')+'<br>sala: '+esc(s.room||'-')+' '+esc(s.roomName||'')+'<br>tipo: '+esc(s.privacy||'-')+'<br>ocupantes: '+(s.occupants||0)+'<br>IMQ: '+(s.imq?'ativo':'off')+'<br>atualizado: '+(s.updated?new Date(s.updated).toLocaleString('pt-BR'):'-');
-  }catch(e){ el.textContent='sem token ou site offline: '+e.message; }
-  const ver=$('#siteVersion');
-  if(ver){
-    try{ const v=await fetch('/api/version').then(r=>r.json()); ver.textContent=v.ok?('APK latest: '+v.tag):'versao indisponivel'; }catch(_){}
+    if(TAB==='onde'){
+      if(s.where && s.where.profile) renderRemoteWhere(s.where);
+    }
+    if(TAB==='privada'){
+      const priv=s.privacy||'?';
+      lastPrivacy=priv;
+      const r=$('#privRoom'); const o=$('#privOcc');
+      if(s.room && priv==='PRIVADA'){
+        if(r) r.innerHTML='<div class="trackline"><span class="muted">['+nowTime()+']</span> ALVO AQUI: '+esc(s.targetNick||'')+' está na sala "'+esc(s.roomName||s.room)+'" (ID: '+esc(s.room)+') - '+esc(priv)+'</div>';
+        setOccupants(s.roster||[], s.occupants);
+      } else if(s.room){
+        if(r) r.innerHTML='<div class="empty">Alvo em sala pública — veja a aba Onde.</div>';
+        if(o) o.innerHTML='';
+      } else {
+        if(r) r.innerHTML='';
+        if(o) o.innerHTML='';
+      }
+      const st=$('#trackStatus');
+      if(st) st.textContent='remoto: '+(s.targetNick||'')+' · IMQ '+(s.imq?'on':'off')+' · '+(s.updated?new Date(s.updated).toLocaleTimeString('pt-BR'):'');
+    }
+  }catch(e){
+    const st=$('#trackStatus'); if(st) st.textContent='site/APK offline';
   }
-}
-
-async function siteCmd(action){
-  const nick=($('#siteNick')||{}).value||'';
-  try{ await api('/api/command',{method:'POST',body:JSON.stringify({action,nick})}); toast('comando enviado'); }catch(e){ toast('erro: '+e.message); }
-}
-
-async function siteSaveRoom(){
-  const rid=($('#siteRid')||{}).value||'';
-  const name=($('#siteRoomName')||{}).value||'';
-  if(!rid||!name){ toast('preencha roomId e nome'); return; }
-  try{ await api('/api/config',{method:'POST',body:JSON.stringify({roomId:rid,name})}); toast('nome salvo no site'); }catch(e){ toast('erro: '+e.message); }
-}
-
-function saveSiteToken(){
-  const t=($('#siteTokenInput')||{}).value||'';
-  localStorage.setItem('imvu_site_token',t.trim());
-  toast('token salvo');
-  loadSiteStatus();
 }
 
 render();
@@ -466,7 +492,7 @@ setInterval(()=>{
   else if(s.reconnecting || s.loggedIn) d.className='dot wait';
   else d.className='dot off';
 }, 4000);
-setInterval(()=>{ if(TAB==='painel') loadSiteStatus(); }, 10000);
+setInterval(()=>{ if(!window.Radar && (TAB==='onde' || TAB==='privada')) loadRemoteStatus(); }, 10000);
 </script>
 </body>
 </html>

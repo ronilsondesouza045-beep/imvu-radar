@@ -5,9 +5,8 @@ object Config {
     const val WS = "wss://wss-imq.imvu.com/streaming/imvu_pre"
     const val UA = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36"
 
-    // site do painel/controle (Vercel) e token do dashboard
+    // site do painel/controle (Vercel), integrado sem token
     const val SITE_URL = "https://imvu-radar.vercel.app"
-    const val SITE_TOKEN = "70558c04518b43e59095870e997da2fdb7eae7dc62844884aff46b73fb361709"
 
     // repositorio de releases (publico) usado pelo auto-update
     const val UPDATE_REPO = "ronilsondesouza045-beep/imvu-radar"

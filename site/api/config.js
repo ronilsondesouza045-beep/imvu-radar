@@ -1,10 +1,6 @@
-import { readState, writeState, auth, body } from "./_store.js";
+import { readState, writeState, body } from "./_store.js";
 
 export default async function handler(req, res) {
-  if (!auth(req)) {
-    res.status(401).json({ error: "unauthorized" });
-    return;
-  }
   try {
     const state = await readState();
     if (req.method === "GET") {

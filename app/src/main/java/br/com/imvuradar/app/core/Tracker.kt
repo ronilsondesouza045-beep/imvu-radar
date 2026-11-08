@@ -43,6 +43,7 @@ object Tracker {
     @Volatile private var currentName: String = ""
     @Volatile private var currentPrivacy: String = ""
     @Volatile private var settingRoom: String? = null
+    @Volatile private var lastWhere: JSONObject? = null
     private var roomSeq = 0
 
     private val roster = LinkedHashMap<String, String>()
@@ -127,6 +128,7 @@ object Tracker {
     // ---------------- ONDE (salas publicas/listadas) ----------------
     fun where(nick: String) {
         pool.submit {
+            lastWhere = null
             val p = api.resolve(nick)
             if (p == null) {
                 emit(JSONObject().put("type", "where").put("nick", nick).put("error", "nick nao encontrado"))
@@ -185,6 +187,7 @@ object Tracker {
             .put("rooms", rooms)
             .put("room", first ?: JSONObject())
             .put("people", peopleJson(hits.firstOrNull()?.second ?: emptyList()))
+        lastWhere = data
         emit(JSONObject().put("type", "where").put("nick", p.username).put("data", data))
     }
 
@@ -502,6 +505,7 @@ object Tracker {
         out.put("name", currentName)
         out.put("roomName", currentName)
         out.put("targetNick", targetNick)
+        out.put("where", lastWhere ?: JSONObject())
         return out
     }
 }

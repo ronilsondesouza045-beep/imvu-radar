@@ -32,12 +32,11 @@ object SiteSync {
         pool.scheduleWithFixedDelay({ tick() }, 5, 10, TimeUnit.SECONDS)
     }
 
-    private fun auth(builder: Request.Builder): Request.Builder =
-        builder.header("Authorization", "Bearer ${Config.SITE_TOKEN}")
-            .header("Content-Type", "application/json")
-
     private fun get(path: String): JSONObject? {
-        val req = auth(Request.Builder().url(Config.SITE_URL + path).get()).build()
+        val req = Request.Builder().url(Config.SITE_URL + path)
+            .header("Content-Type", "application/json")
+            .get()
+            .build()
         return try {
             client.newCall(req).execute().use { r ->
                 if (!r.isSuccessful) null else JSONObject(r.body?.string() ?: "{}")
@@ -48,10 +47,10 @@ object SiteSync {
     }
 
     private fun post(path: String, body: JSONObject) {
-        val req = auth(
-            Request.Builder().url(Config.SITE_URL + path)
-                .post(body.toString().toRequestBody("application/json".toMediaType()))
-        ).build()
+        val req = Request.Builder().url(Config.SITE_URL + path)
+            .header("Content-Type", "application/json")
+            .post(body.toString().toRequestBody("application/json".toMediaType()))
+            .build()
         try {
             client.newCall(req).execute().use { _ -> }
         } catch (_: Exception) {
@@ -70,6 +69,7 @@ object SiteSync {
                 when (cmd.optString("action")) {
                     "track" -> Tracker.track(cmd.optString("nick"))
                     "stop" -> Tracker.stopTrack()
+                    "where" -> Tracker.where(cmd.optString("nick"))
                 }
             }
         } catch (_: Exception) {
