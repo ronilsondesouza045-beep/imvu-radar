@@ -359,10 +359,6 @@ class ImvuApi {
         return Pair(name, privacy)
     }
 
-    fun invalidateRoomLabel(rid: String) {
-        _labels.remove(rid)
-    }
-
     fun enterRoom(rid: String): Int {
         val body = JSONObject().put("id", "${Config.API}/user/user-$cid").toString()
         val r = raw("/chat/chat-$rid/participants", "POST", body, withSauce = true) ?: return 0

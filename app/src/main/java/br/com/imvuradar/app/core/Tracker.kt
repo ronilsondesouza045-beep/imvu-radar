@@ -281,7 +281,6 @@ object Tracker {
     fun setRoomName(rid: String, name: String) {
         if (rid.isBlank() || name.isBlank()) return
         try { RoomNames.set(App.ctx, rid, name) } catch (_: Exception) { }
-        api.invalidateRoomLabel(rid)
         pool.submit {
             if (currentRoom == rid) {
                 val label = api.roomLabel(rid)
