@@ -20,6 +20,14 @@ data class Person(
     val online: Boolean = false
 )
 
+/** sala atual de um amigo, ja com o no da sala denormalizado na lista do IMVU */
+data class RoomHint(
+    val rid: String,
+    val name: String,
+    val privacy: String,
+    val occupancy: Int
+)
+
 /**
  * Cliente da API do IMVU (api.imvu.com) - porta do motor validado em Python.
  * Login -> sauce + cid + session_id; listas oficiais; roster; entrar/sair de sala.
@@ -46,6 +54,11 @@ class ImvuApi {
     private val _rosterCache = HashMap<String, Pair<Long, List<Person>>>()
     private val _userCache = HashMap<String, Pair<Long, String>>()
     private val _roomNames = HashMap<String, String>()
+    private var _friendsCache: Pair<Long, Set<String>>? = null
+
+    fun cacheRoomName(rid: String, name: String) {
+        if (rid.isNotEmpty() && name.isNotEmpty()) _roomNames[rid] = name
+    }
 
     private fun cookieHeader(): String =
         cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
@@ -530,6 +543,118 @@ class ImvuApi {
             if (people.any { it.cid == targetCid }) out.add(Pair(rid, people))
         }
         return out
+    }
+
+    /**
+     * SYNC INICIAL (HTTP): a lista "friends" do IMVU ja contem a sala ATUAL de
+     * cada amigo, com o no da sala denormalizado (nome, privacidade, ocupacao).
+     * Uma unica requisicao devolve o estado do momento - sem esperar WebSocket.
+     */
+    fun friendsRoomHints(): List<RoomHint> {
+        if (cid.isEmpty()) return emptyList()
+        val env = getJson("/room_list/room_list-$cid-friends/rooms") ?: return emptyList()
+        val den = env.optJSONObject("denormalized") ?: return emptyList()
+        var items = JSONArray()
+        val keys = den.keys()
+        while (keys.hasNext()) {
+            val k = keys.next()
+            if (!k.endsWith("/rooms")) continue
+            items = den.optJSONObject(k)?.optJSONObject("data")?.optJSONArray("items") ?: JSONArray()
+        }
+        val out = ArrayList<RoomHint>()
+        for (i in 0 until items.length()) {
+            val itemUrl = items.optString(i, "")
+            val rid = itemUrl.substringAfterLast('/').removePrefix("room-")
+            if (rid.isEmpty()) continue
+            val ref = den.optJSONObject(itemUrl)
+                ?.optJSONObject("relations")?.optString("ref").orEmpty()
+            val rd = den.optJSONObject(ref)?.optJSONObject("data")
+            val name = rd?.optString("name", "").orEmpty()
+            val privacy = rd?.optString("privacy", "").orEmpty()
+            val occ = rd?.optInt("occupancy", 0) ?: 0
+            if (name.isNotEmpty()) _roomNames[rid] = name
+            out.add(RoomHint(rid, name, privacy, occ))
+        }
+        return out
+    }
+
+    /** cids dos amigos da conta do bot (cache 5 min) */
+    fun friendCids(): Set<String> {
+        val now = System.currentTimeMillis()
+        _friendsCache?.let { if (now - it.first < 300_000) return it.second }
+        val out = HashSet<String>()
+        val j = getJson("/user/user-$cid/friends?limit=200")
+        val den = j?.optJSONObject("denormalized")
+        if (den != null) {
+            val keys = den.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                val v = den.optJSONObject(k) ?: continue
+                if (v.optJSONObject("relations")?.has("viewer_friend") == true) {
+                    val c = k.substringAfterLast("user-").trim()
+                    if (c.isNotEmpty()) out.add(c)
+                }
+            }
+        }
+        _friendsCache = now to out
+        return out
+    }
+
+    /**
+     * SYNC INICIAL para o caso de o alvo ser a propria conta do bot:
+     * varre default_room / photo_booth_room / recent_rooms (todos legiveis
+     * pela propria sessao) e devolve a sala onde o cid esta AGORA.
+     */
+    fun selfCurrentRoom(): Pair<String, List<Person>>? {
+        if (cid.isEmpty()) return null
+        val j = getJson("/user/user-$cid") ?: return null
+        val rel = HashMap<String, String>()
+        val den = j.optJSONObject("denormalized")
+        if (den != null) {
+            val nk = den.keys()
+            while (nk.hasNext()) {
+                val v = den.optJSONObject(nk.next()) ?: continue
+                val r = v.optJSONObject("relations") ?: continue
+                val rk = r.keys()
+                while (rk.hasNext()) {
+                    val k = rk.next()
+                    rel[k] = r.optString(k)
+                }
+            }
+        }
+        val ids = LinkedHashSet<String>()
+        for (k in listOf("default_room", "photo_booth_room")) {
+            val u = rel[k] ?: continue
+            if (u.contains("/room/room-")) ids.add(u.substringAfterLast("/room/room-"))
+        }
+        val recent = rel["recent_rooms"]
+        if (recent != null) {
+            val rr = getJson(recent.replace(Config.API, ""))
+            val d2 = rr?.optJSONObject("denormalized")
+                if (d2 != null) {
+                    val nk2 = d2.keys()
+                    while (nk2.hasNext()) {
+                        val v = d2.optJSONObject(nk2.next()) ?: continue
+                        val items = v.optJSONObject("data")?.optJSONArray("items") ?: continue
+                        for (i in 0 until items.length()) {
+                            val s = items.optString(i, "")
+                            val rid = when {
+                                s.contains("/rooms/room-") ->
+                                    s.substringAfterLast('/').removePrefix("room-")
+                                s.contains("/room/room-") ->
+                                    s.substringAfterLast("/room/room-")
+                                else -> ""
+                            }
+                            if (rid.isNotEmpty()) ids.add(rid)
+                        }
+                    }
+                }
+        }
+        for (rid in ids.take(12)) {
+            val people = roster(rid)
+            if (people.any { it.cid == cid }) return Pair(rid, people)
+        }
+        return null
     }
 
     /**

@@ -224,7 +224,16 @@ object Tracker {
 
             imq.setTarget(p.cid)
             emit(JSONObject().put("type", "track_start").put("target", personJson(p)))
-            emit(JSONObject().put("type", "track_status").put("msg", "conectando ao IMQ e procurando a sala..."))
+            emit(JSONObject().put("type", "track_status").put("msg", "sync inicial (HTTP)..."))
+
+            // SYNC INICIAL IMEDIATO: le o estado ATUAL por HTTP, sem esperar WebSocket
+            val init = initialSync(p)
+            if (init != null && probeGen.get() == gen && targetCid == p.cid) {
+                setCurrentRoom(init.rid, init.people, init.via)
+                emit(JSONObject().put("type", "track_status").put("msg", "sync ok - tempo real ativo"))
+            } else {
+                emit(JSONObject().put("type", "track_status").put("msg", "sem snapshot HTTP; aguardando evento do IMQ..."))
+            }
 
             // probe roda na MESMA conexao IMQ e em thread propria: nunca segura o pool
             startProbeLoop(p.cid, gen)
@@ -260,6 +269,59 @@ object Tracker {
                 emit(JSONObject().put("type", "track_status").put("msg", "aguardando evento do IMQ..."))
             }
         }
+    }
+
+    private data class InitialRoom(val rid: String, val people: List<Person>, val via: String)
+
+    /**
+     * SYNC INICIAL imediato (sem sleep): pega a sala ATUAL do alvo por HTTP.
+     *  1) alvo == conta do bot -> log local do WebView / recent_rooms (sessao dona)
+     *  2) lista de amigos do IMVU -> sala atual do amigo (vem denormalizada)
+     *  3) catvu -> indice externo de sala privada ocupada
+     * Depois disso o IMQ assume para entrada/saida em tempo real.
+     */
+    private fun initialSync(p: Person): InitialRoom? {
+        // 1) o alvo e a propria conta logada no bot
+        if (p.cid == api.cid) {
+            val local = LocalState.lastRoomId
+            if (local.isNotEmpty()) {
+                val people = try { api.roster(local) } catch (_: Exception) { emptyList() }
+                if (people.any { it.cid == p.cid }) {
+                    return InitialRoom(local, people, "local")
+                }
+            }
+            try {
+                val self = api.selfCurrentRoom()
+                if (self != null) return InitialRoom(self.first, self.second, "self_recent")
+            } catch (_: Exception) { }
+        }
+
+        // 2) lista de amigos: o IMVU mantem a sala atual de cada amigo
+        try {
+            val hints = api.friendsRoomHints()
+            for (h in hints) {
+                val people = try { api.roster(h.rid) } catch (_: Exception) { emptyList() }
+                if (people.any { it.cid == p.cid }) {
+                    return InitialRoom(h.rid, people, "friends")
+                }
+            }
+            // sala privada: o roster pode vir 403, mas a lista ainda aponta a
+            // sala. Com um unico amigo (o alvo), a sala da lista e a dele.
+            if (hints.size == 1) {
+                val friends = api.friendCids()
+                if (friends.size == 1 && p.cid in friends) {
+                    return InitialRoom(hints.first().rid, emptyList(), "friends")
+                }
+            }
+        } catch (_: Exception) { }
+
+        // 3) indice externo de sala privada
+        try {
+            val hint = api.catvuRooms(p.username)
+            if (hint.isNotEmpty()) return InitialRoom(hint.first(), emptyList(), "catvu")
+        } catch (_: Exception) { }
+
+        return null
     }
 
     private fun startProbeLoop(target: String, gen: Int) {

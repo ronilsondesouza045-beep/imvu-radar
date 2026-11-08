@@ -257,7 +257,7 @@ function ficha(cid,user,name,render,photo){
 function nowTime(){ try{ return new Date().toLocaleTimeString('pt-BR'); }catch(_){ return ''; } }
 
 function viaName(v){
-  const m={roster:'lista/roster',imq:'IMQ',imq_new:'IMQ (entrou agora)',imq_probe:'IMQ (fila ativa)',myroom:'My Room (provável)',catvu:'catvu'};
+  const m={roster:'lista/roster',imq:'IMQ',imq_new:'IMQ (entrou agora)',imq_probe:'IMQ (fila ativa)',myroom:'My Room (provável)',catvu:'catvu',friends:'lista de amigos (IMVU)',local:'log local',self_recent:'recent_rooms'};
   return m[v]||v||'';
 }
 

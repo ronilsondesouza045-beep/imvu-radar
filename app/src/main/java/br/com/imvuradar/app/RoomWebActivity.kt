@@ -14,6 +14,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import br.com.imvuradar.app.core.LocalState
 import org.json.JSONObject
 
 /**
@@ -33,6 +34,7 @@ class RoomWebActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val roomId = intent.getStringExtra("roomId") ?: ""
+        if (roomId.isNotEmpty()) LocalState.lastRoomId = roomId
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
