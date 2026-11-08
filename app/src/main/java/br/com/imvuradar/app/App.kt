@@ -21,6 +21,7 @@ class App : Application() {
         createChannel()
         Notifications.ensureChannel(this)
         Tracker.start()
+        br.com.imvuradar.app.core.SiteSync.start()
         startServiceCompat()
     }
 

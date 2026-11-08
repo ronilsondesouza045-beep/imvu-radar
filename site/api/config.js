@@ -1,0 +1,33 @@
+import { readState, writeState, auth, body } from "./_store.js";
+
+export default async function handler(req, res) {
+  if (!auth(req)) {
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+  try {
+    const state = await readState();
+    if (req.method === "GET") {
+      res.status(200).json({ rooms: state.rooms || {}, version: state.version || null });
+      return;
+    }
+    if (req.method === "POST") {
+      const b = body(req);
+      const rooms = state.rooms || {};
+      if (b.roomId) {
+        const rid = String(b.roomId).trim();
+        const name = String(b.name || "").trim();
+        if (name) rooms[rid] = name;
+        else delete rooms[rid];
+      }
+      if (b.version) state.version = b.version;
+      state.rooms = rooms;
+      await writeState(state);
+      res.status(200).json({ ok: true, rooms });
+      return;
+    }
+    res.status(405).json({ error: "method" });
+  } catch (e) {
+    res.status(500).json({ error: String((e && e.message) || e) });
+  }
+}

@@ -473,4 +473,35 @@ object Tracker {
             .put("occupants", synchronized(rosterLock) { roster.size })
             .put("error", api.lastError)
     }
+
+    /** reaplica o nome da sala atual quando o config do site muda */
+    fun refreshRoomLabel() {
+        val rid = currentRoom ?: return
+        pool.submit {
+            if (currentRoom != rid) return@submit
+            val label = api.roomLabel(rid)
+            if (currentRoom == rid) {
+                currentName = label.first
+                currentPrivacy = label.second
+                emitTrackRoom()
+            }
+        }
+    }
+
+    /** snapshot para o site (status + roster + privacidade) */
+    fun snapshot(): JSONObject {
+        val out = status()
+        val arr = JSONArray()
+        synchronized(rosterLock) {
+            roster.forEach { (cid, nick) ->
+                arr.put(JSONObject().put("cid", cid).put("nick", nick))
+            }
+        }
+        out.put("roster", arr)
+        out.put("privacy", currentPrivacy)
+        out.put("name", currentName)
+        out.put("roomName", currentName)
+        out.put("targetNick", targetNick)
+        return out
+    }
 }

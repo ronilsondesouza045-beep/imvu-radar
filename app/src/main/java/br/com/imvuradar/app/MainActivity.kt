@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.View
 import android.webkit.JavascriptInterface
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -53,6 +54,15 @@ class MainActivity : AppCompatActivity() {
                 loader.shouldInterceptRequest(req.url)
 
             override fun shouldOverrideUrlLoading(view: WebView, req: WebResourceRequest): Boolean = true
+
+            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                if (request.isForMainFrame) {
+                    try {
+                        view.loadUrl("https://appassets.androidplatform.net/assets/web/index.html")
+                    } catch (_: Exception) {
+                    }
+                }
+            }
         }
         web.addJavascriptInterface(Bridge(), "Radar")
 
@@ -65,7 +75,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        web.loadUrl("https://appassets.androidplatform.net/assets/web/index.html")
+        web.loadUrl(Config.SITE_URL)
 
         askNotifications()
         askBatteryExemption()
@@ -196,6 +206,9 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun status(): String = Tracker.status().toString()
+
+        @JavascriptInterface
+        fun siteToken(): String = Config.SITE_TOKEN
 
         /** render do IMVU com sessao -> data URI (imagens do imvu pedem login) */
         @JavascriptInterface

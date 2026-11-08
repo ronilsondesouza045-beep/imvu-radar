@@ -55,6 +55,7 @@ class TrackerService : Service() {
         super.onCreate()
         startForegroundCompat()
         Tracker.start()
+        br.com.imvuradar.app.core.SiteSync.start()
         schedule(this)
     }
 
@@ -79,6 +80,7 @@ class TrackerService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForegroundCompat()
         Tracker.start()
+        br.com.imvuradar.app.core.SiteSync.start()
         schedule(this)
         return START_STICKY
     }

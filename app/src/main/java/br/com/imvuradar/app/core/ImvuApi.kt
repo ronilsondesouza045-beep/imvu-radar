@@ -341,13 +341,18 @@ class ImvuApi {
         val m = roomJson(rid)
         val n = rid.substringAfterLast('-', "0")
         val cached = _roomNames[rid] ?: ""
+        val remote = RemoteConfig.nameFor(rid)
         if (m.optBoolean("restricted")) {
-            val name = cached.ifBlank {
-                if (n == "1") "My Room" else "Sala privada $n"
+            val name = remote.ifBlank {
+                cached.ifBlank {
+                    if (n == "1") "My Room" else "Sala privada $n"
+                }
             }
             return Pair(name, "PRIVADA")
         }
-        val name = m.optString("name", "").ifBlank { cached.ifBlank { rid } }
+        val name = remote.ifBlank {
+            m.optString("name", "").ifBlank { cached.ifBlank { rid } }
+        }
         val privacy = if (m.optString("privacy") == "private") "PRIVADA" else "PUBLICA"
         return Pair(name, privacy)
     }
