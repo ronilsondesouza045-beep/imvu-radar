@@ -491,21 +491,34 @@ object Tracker {
         }
     }
 
-    /** snapshot para o site (status + roster + privacidade) */
+    /** versao publica do where: so salas/IDs/tipo/contagem, sem nicks */
+    private fun publicWhere(d: JSONObject?): JSONObject {
+        if (d == null) return JSONObject()
+        val rooms = d.optJSONArray("rooms") ?: JSONArray()
+        val arr = JSONArray()
+        for (i in 0 until rooms.length()) {
+            val r = rooms.optJSONObject(i) ?: continue
+            val m = JSONObject()
+            m.put("roomId", r.optString("roomId"))
+            m.put("name", r.optString("name"))
+            m.put("privacy", r.optString("privacy"))
+            m.put("occupancy", r.optInt("occupancy"))
+            m.put("capacity", r.optInt("capacity"))
+            m.put("people", r.optInt("people"))
+            arr.put(m)
+        }
+        return JSONObject().put("rooms", arr)
+    }
+
+    /** snapshot publico para o site (sem nicks de alvo/ocupantes) */
     fun snapshot(): JSONObject {
         val out = status()
-        val arr = JSONArray()
-        synchronized(rosterLock) {
-            roster.forEach { (cid, nick) ->
-                arr.put(JSONObject().put("cid", cid).put("nick", nick))
-            }
-        }
-        out.put("roster", arr)
+        out.remove("target")
+        out.remove("targetNick")
         out.put("privacy", currentPrivacy)
         out.put("name", currentName)
         out.put("roomName", currentName)
-        out.put("targetNick", targetNick)
-        out.put("where", lastWhere ?: JSONObject())
+        out.put("where", publicWhere(lastWhere))
         return out
     }
 }

@@ -71,6 +71,7 @@ object SiteSync {
                     "stop" -> Tracker.stopTrack()
                     "where" -> Tracker.where(cmd.optString("nick"))
                 }
+                post("/api/command", JSONObject().put("ack", id))
             }
         } catch (_: Exception) {
         }

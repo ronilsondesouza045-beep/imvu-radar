@@ -79,6 +79,11 @@ nav.bot button.on{color:var(--txt)}
 .modal.on{display:flex}
 .sheet{background:linear-gradient(180deg,#131b2e,#090d17);border:1px solid var(--line2);border-radius:18px;padding:18px;max-width:520px;width:100%;max-height:88vh;overflow:auto}
 .sheet img{width:100%;border-radius:12px;margin-top:10px;background:#060a11}
+@media (min-width:900px){
+  main{max-width:980px;margin:0 auto;padding-left:24px;padding-right:24px;padding-bottom:92px}
+  nav.bot{left:50%;right:auto;transform:translateX(-50%);width:min(680px,calc(100% - 24px));border:1px solid var(--line);border-bottom:0;border-radius:18px 18px 0 0}
+  .people{grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}
+}
 </style>
 </head>
 <body>
@@ -207,7 +212,6 @@ async function act(a){
         const s=await api('/api/status');
         const o=out('out3');
         if(o) o.innerHTML='<div class="mono" style="font-size:12.5px;line-height:1.7">APK: '+(s.imq?'online':'offline')+
-          '<br>alvo: '+esc(s.targetNick||'-')+
           '<br>sala: '+esc(s.room||'-')+' '+esc(s.roomName||'')+
           '<br>tipo: '+esc(s.privacy||'-')+
           '<br>ocupantes: '+(s.occupants||0)+'</div>';
@@ -427,23 +431,15 @@ async function api(path, opts){
 }
 
 function renderRemoteWhere(d){
-  const p=d.profile||{}, rooms=d.rooms||[];
+  const rooms=d.rooms||[];
   const o=out(); if(!o) return;
-  const badge=p.online?'<span class="tag on">ONLINE</span>':((p.is_vip||p.is_ap)?'<span class="tag off">PRESENÇA OCULTA</span>':'<span class="tag off">NÃO VISTO</span>');
-  let h='<div class="hero" style="margin-top:16px"><div class="picwrap">'+
-    '<img class="pic" src="'+esc(p.avatar||'')+'" alt=""></div>'+
-    '<div style="min-width:0"><div class="nm">'+esc(p.display_name||p.username)+'</div>'+
-    '<div class="muted mono" style="font-size:12px">'+esc(p.username)+' · cid '+esc(p.cid)+'</div>'+
-    '<div class="badges">'+badge+(p.is_vip?'<span class="tag vip">VIP</span>':'')+(p.is_ap?'<span class="tag vip">AP</span>':'')+'</div></div></div>';
+  let h='<div class="card" style="margin-top:16px"><h1>Salas encontradas</h1><p class="sub">resultado do APK — sem exibir nicks</p></div>';
   if(rooms.length){
     h+='<h2 style="margin-top:16px">Salas</h2>';
     rooms.forEach(function(r){
       h+='<div class="card" style="margin-bottom:12px">';
-      if(r.render) h+='<div class="roomcover"><img src="'+esc(r.render)+'"><div class="ov"><div class="rm">'+esc(r.name||r.roomId)+'</div>'+
-        '<div class="muted mono" style="font-size:11.5px">['+esc(r.roomId)+']</div></div></div>';
-      else h+='<div class="rm">'+esc(r.name||r.roomId)+' <span class="muted mono">['+esc(r.roomId)+']</span></div>';
-      h+='<div class="badges" style="margin:8px 0">'+tagRoom(r.privacy)+(r.owner?'<span class="muted">dono: '+esc(r.owner)+'</span>':'')+'</div>';
-      h+=peopleGrid(r.peopleList||[],'ninguem visivel');
+      h+='<div class="rm">'+esc(r.name||r.roomId)+' <span class="muted mono">['+esc(r.roomId)+']</span></div>';
+      h+='<div class="badges" style="margin:8px 0">'+tagRoom(r.privacy)+'<span class="muted">pessoas: '+(r.people||0)+'</span></div>';
       h+='</div>';
     });
   } else {
@@ -457,15 +453,15 @@ async function loadRemoteStatus(){
   try{
     const s=await api('/api/status');
     if(TAB==='onde'){
-      if(s.where && s.where.profile) renderRemoteWhere(s.where);
+      if(s.where && s.where.rooms) renderRemoteWhere(s.where);
     }
     if(TAB==='privada'){
       const priv=s.privacy||'?';
       lastPrivacy=priv;
       const r=$('#privRoom'); const o=$('#privOcc');
       if(s.room && priv==='PRIVADA'){
-        if(r) r.innerHTML='<div class="trackline"><span class="muted">['+nowTime()+']</span> ALVO AQUI: '+esc(s.targetNick||'')+' está na sala "'+esc(s.roomName||s.room)+'" (ID: '+esc(s.room)+') - '+esc(priv)+'</div>';
-        setOccupants(s.roster||[], s.occupants);
+        if(r) r.innerHTML='<div class="trackline"><span class="muted">['+nowTime()+']</span> ALVO AQUI: sala "'+esc(s.roomName||s.room)+'" (ID: '+esc(s.room)+') - '+esc(priv)+'</div>';
+        if(o) o.innerHTML='<span class="muted">['+nowTime()+']</span> OCUPANTES: '+(s.occupants||0);
       } else if(s.room){
         if(r) r.innerHTML='<div class="empty">Alvo em sala pública — veja a aba Onde.</div>';
         if(o) o.innerHTML='';
@@ -474,7 +470,9 @@ async function loadRemoteStatus(){
         if(o) o.innerHTML='';
       }
       const st=$('#trackStatus');
-      if(st) st.textContent='remoto: '+(s.targetNick||'')+' · IMQ '+(s.imq?'on':'off')+' · '+(s.updated?new Date(s.updated).toLocaleTimeString('pt-BR'):'');
+      if(st) st.textContent='remoto: IMQ '+(s.imq?'on':'off')+' · '+(s.updated?new Date(s.updated).toLocaleTimeString('pt-BR'):'');
+      const l=$('#trackLog');
+      if(l && !l.children.length) l.innerHTML='<div class="empty">log de entradas/saídas no APK; aqui mostra o status atual.</div>';
     }
   }catch(e){
     const st=$('#trackStatus'); if(st) st.textContent='site/APK offline';

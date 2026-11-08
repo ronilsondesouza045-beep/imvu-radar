@@ -9,6 +9,15 @@ export default async function handler(req, res) {
     }
     if (req.method === "POST") {
       const b = body(req);
+      if (b.ack) {
+        const state = await readState();
+        if (state.command && state.command.id === b.ack) {
+          state.command = null;
+          await writeState(state);
+        }
+        res.status(200).json({ ok: true });
+        return;
+      }
       const action = String(b.action || "");
       if (!["track", "stop", "where"].includes(action)) {
         res.status(400).json({ error: "action" });
