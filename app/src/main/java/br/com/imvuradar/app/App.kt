@@ -19,6 +19,7 @@ class App : Application() {
         super.onCreate()
         ctx = this
         createChannel()
+        Notifications.ensureChannel(this)
         Tracker.start()
         startServiceCompat()
     }

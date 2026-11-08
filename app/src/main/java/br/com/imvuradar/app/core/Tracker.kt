@@ -2,6 +2,7 @@ package br.com.imvuradar.app.core
 
 import br.com.imvuradar.app.App
 import br.com.imvuradar.app.Config
+import br.com.imvuradar.app.Notifications
 import br.com.imvuradar.app.SecureStore
 import org.json.JSONArray
 import org.json.JSONObject
@@ -316,6 +317,10 @@ object Tracker {
                             synchronized(rosterLock) { roster.clear() }
                         }
                         emit(JSONObject().put("type", "track_left").put("room", room))
+                        Notifications.alert(
+                            App.ctx, "SAIU DA SALA",
+                            "$targetNick saiu da sala de ID $room"
+                        )
                     }
                 }
             }
@@ -407,6 +412,12 @@ object Tracker {
         imq.subscribeRoom(room)
         emitTrackRoom()
         emitOccupants()
+        // notificacao no celular: alvo ja estava / entrou / mudou de sala
+        val tipo = if (currentPrivacy == "PRIVADA") "SALA PRIVADA" else "SALA PÚBLICA"
+        Notifications.alert(
+            App.ctx, tipo,
+            "$targetNick está na sala \"$currentName\" (ID: $room)"
+        )
         synchronized(this) { if (settingRoom == room) settingRoom = null }
     }
 

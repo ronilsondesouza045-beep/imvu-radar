@@ -91,6 +91,8 @@ nav.bot button.on{color:var(--txt)}
 </div>
 <main id="app"></main>
 <nav class="bot" id="nav"></nav>
+
+<div id="toast" style="position:fixed;left:14px;right:14px;bottom:78px;z-index:60;background:rgba(10,15,26,.96);border:1px solid var(--line2);border-radius:12px;padding:10px 12px;font-size:12.5px;opacity:0;transition:opacity .2s;pointer-events:none"></div>
 <div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
 
 <script>
@@ -123,13 +125,25 @@ const V={
   onde:()=>`<div class="card"><h1>Onde está</h1><p class="sub">localiza o nick nas salas públicas/listadas do IMVU</p>
     <input id="nick" placeholder="nick / avatar" autocapitalize="off" autocorrect="off">
     <button onclick="act('where')">Rastrear</button><div id="out"></div></div>`,
-  privada:()=>`<div class="card" style="border-color:rgba(255,179,71,.35)"><h1 style="color:#ffcf87">Rastreio privado</h1>
-    <p class="sub">IMQ em tempo real: sala atual, nome, privacidade e ocupantes</p>
+  privada:()=>`<div class="card" style="border-color:rgba(255,179,71,.35)"><h1 style="color:#ffcf87">Rastreio em tempo real</h1>
+    <p class="sub">IMQ: sala atual, nome, privacidade e ocupantes — privado e público separados</p>
     <input id="trackNick" placeholder="nick / avatar" autocapitalize="off" autocorrect="off">
     <div class="row2"><button onclick="act('track')">Iniciar</button><button class="ghost" onclick="act('stop')">Parar</button></div>
+    <div class="hero" id="trackHero" style="display:none;margin-top:12px">
+      <div class="picwrap" style="width:70px;height:92px"><img id="trackAvatar" class="pic" style="width:66px;height:88px" src="" alt=""></div>
+      <div><div class="nm" id="trackTargetName"></div><div class="muted mono" id="trackTargetCid" style="font-size:11.5px"></div></div>
+    </div>
     <div id="trackStatus" class="muted mono" style="font-size:12px;margin-top:10px"></div>
-    <div id="trackRoom" style="margin-top:10px"></div>
-    <div id="trackOcc" class="trackline" style="margin-top:8px"></div>
+    <div class="card" id="privCard" style="margin-top:10px;border-color:rgba(255,179,71,.35)">
+      <div class="tag priv">SALA PRIVADA</div>
+      <div id="privRoom" style="margin-top:8px"></div>
+      <div id="privOcc" class="trackline" style="margin-top:8px"></div>
+    </div>
+    <div class="card" id="pubCard" style="margin-top:10px;border-color:rgba(46,230,168,.35)">
+      <div class="tag pub">SALA PÚBLICA</div>
+      <div id="pubRoom" style="margin-top:8px"></div>
+      <div id="pubOcc" class="trackline" style="margin-top:8px"></div>
+    </div>
     <h2>Movimento da sala</h2>
     <div id="trackLog" class="list"></div>
   </div>`,
@@ -154,6 +168,7 @@ function render(){
 let lastNick='';
 let trackNick='';
 let lastTrackTarget=null;
+let lastPrivacy='';
 
 function act(a){
   if(a==='where'){
@@ -172,8 +187,7 @@ function act(a){
   else if(a==='stop'){
     try{ Radar.stopTrack(); }catch(_){}
     $('#trackStatus').textContent='rastreio parado';
-    $('#trackRoom').innerHTML='';
-    $('#trackOcc').innerHTML='';
+    clearTrackUI();
   }
   else if(a==='status'){
     try{
@@ -214,10 +228,15 @@ function ficha(cid,user,name,render,photo){
 function nowTime(){ try{ return new Date().toLocaleTimeString('pt-BR'); }catch(_){ return ''; } }
 
 function clearTrackUI(){
-  const r=$('#trackRoom'); if(r) r.innerHTML='';
-  const o=$('#trackOcc'); if(o) o.innerHTML='';
+  const pr=$('#privRoom'); if(pr) pr.innerHTML='';
+  const po=$('#privOcc'); if(po) po.innerHTML='';
+  const ur=$('#pubRoom'); if(ur) ur.innerHTML='';
+  const uo=$('#pubOcc'); if(uo) uo.innerHTML='';
   const l=$('#trackLog'); if(l) l.innerHTML='';
+  const hero=$('#trackHero'); if(hero) hero.style.display='none';
+  const av=$('#trackAvatar'); if(av) av.src='';
   lastTrackTarget=null;
+  lastPrivacy='';
 }
 
 function logTrack(html,cls){
@@ -233,14 +252,24 @@ function logTrack(html,cls){
 function setOccupants(list,total){
   const nomes=(list||[]).map(o=>o.nick||o.username||o.cid).filter(Boolean);
   const t=(total!=null)?total:nomes.length;
-  const o=$('#trackOcc');
+  const o = lastPrivacy==='PRIVADA' ? $('#privOcc') : (lastPrivacy==='PUBLICA' ? $('#pubOcc') : null);
   if(o) o.innerHTML='<span class="muted">['+nowTime()+']</span> OCUPANTES ATUAIS: '+(nomes.length?esc(nomes.join(', ')):'(ninguem)')+' (Total: '+t+')';
+}
+
+function toast(msg){
+  const el=document.getElementById('toast');
+  if(!el) return;
+  el.textContent=msg||'';
+  el.style.opacity='1';
+  clearTimeout(el._t);
+  el._t=setTimeout(function(){ el.style.opacity='0'; }, 4500);
 }
 
 function showUpdate(d){
   if(!d || !d.update) return;
   $('#sheet').innerHTML='<h3 style="margin:0 0 6px">Atualização disponível</h3>'+
     '<p class="sub">versão '+esc(d.versionCode)+'</p>'+
+    '<div id="updStatus" class="muted" style="font-size:12px;margin-bottom:10px"></div>'+
     '<button onclick="Radar.installUpdate(\''+esc(d.url)+'\')">Baixar e instalar</button>';
   $('#modal').classList.add('on');
 }
@@ -250,6 +279,11 @@ window.__radarEvent = function(e){
   if(t==='ready' || t==='imq_ready'){ $('#dot').className='dot'; }
   else if(t==='login_error'){ $('#dot').className='dot wait'; showLogin(e.message); }
   else if(t==='imq_error'){ $('#dot').className='dot wait'; }
+  else if(t==='log'){
+    const msg=e.msg||'';
+    toast(msg);
+    const us=document.getElementById('updStatus'); if(us) us.textContent=msg;
+  }
   else if(t==='where'){
     const d=e.data||{}, p=d.profile||{}, rooms=d.rooms||[];
     const list=(rooms&&rooms.length)?rooms:((d.room&&d.room.roomId)?[d.room]:[]);
@@ -289,6 +323,10 @@ window.__radarEvent = function(e){
     lastTrackTarget=e.target||null;
     const n=(lastTrackTarget&&(lastTrackTarget.username||lastTrackTarget.display_name))||trackNick;
     const st=$('#trackStatus'); if(st) st.textContent='rastreando '+n+'…';
+    const hero=$('#trackHero'); if(hero) hero.style.display='flex';
+    const av=$('#trackAvatar'); if(av) av.src=(lastTrackTarget&&(lastTrackTarget.avatar||''))||'';
+    const tn=$('#trackTargetName'); if(tn) tn.textContent=(lastTrackTarget&&(lastTrackTarget.display_name||lastTrackTarget.username))||n;
+    const tc=$('#trackTargetCid'); if(tc) tc.textContent=lastTrackTarget?('@'+lastTrackTarget.username+' · cid '+lastTrackTarget.cid):'';
   }
   else if(t==='track_status'){
     const st=$('#trackStatus'); if(st) st.textContent=e.msg||'';
@@ -298,25 +336,34 @@ window.__radarEvent = function(e){
     const nick=tg.username||tg.display_name||trackNick||'alvo';
     const name=e.name||e.room||'';
     const priv=e.privacy||'?';
-    const r=$('#trackRoom');
-    if(r) r.innerHTML='<div class="card" style="margin-bottom:10px;border-color:rgba(46,230,168,.35)">'+
-      '<div class="badges" style="margin-top:0">'+tagRoom(priv)+'<span class="tag on">ALVO AQUI</span></div>'+
-      '<div class="trackline"><span class="muted">['+nowTime()+']</span> ALVO AQUI: '+esc(nick)+' está na sala "'+esc(name)+'" (ID: '+esc(e.room)+') - '+esc(priv)+'</div></div>';
+    lastPrivacy=priv;
+    const isPriv=(priv==='PRIVADA');
+    const active = isPriv ? $('#privRoom') : $('#pubRoom');
+    const inactive = isPriv ? $('#pubRoom') : $('#privRoom');
+    const inactiveOcc = isPriv ? $('#pubOcc') : $('#privOcc');
+    if(inactive) inactive.innerHTML='<div class="empty">—</div>';
+    if(inactiveOcc) inactiveOcc.innerHTML='';
+    if(active) active.innerHTML='<div class="trackline"><span class="muted">['+nowTime()+']</span> ALVO AQUI: '+esc(nick)+' está na sala "'+esc(name)+'" (ID: '+esc(e.room)+') - '+esc(priv)+'</div>';
+    if(tg.avatar){ const av=$('#trackAvatar'); if(av) av.src=tg.avatar; }
     setOccupants(e.occupants||[], e.total);
   }
   else if(t==='track_occupants'){
     setOccupants(e.occupants||[], e.total);
   }
   else if(t==='track_join'){
-    logTrack('<span class="muted">['+nowTime()+']</span> ENTROU NA SALA: '+esc(e.nick||e.cid),'in');
+    const tipo = lastPrivacy==='PRIVADA'?'[PRIVADA]':(lastPrivacy==='PUBLICA'?'[PÚBLICA]':'');
+    logTrack('<span class="muted">['+nowTime()+']</span> '+tipo+' ENTROU NA SALA: '+esc(e.nick||e.cid),'in');
   }
   else if(t==='track_leave'){
-    logTrack('<span class="muted">['+nowTime()+']</span> SAIU DA SALA: '+esc(e.nick||e.cid),'out');
+    const tipo = lastPrivacy==='PRIVADA'?'[PRIVADA]':(lastPrivacy==='PUBLICA'?'[PÚBLICA]':'');
+    logTrack('<span class="muted">['+nowTime()+']</span> '+tipo+' SAIU DA SALA: '+esc(e.nick||e.cid),'out');
   }
   else if(t==='track_left'){
-    const r=$('#trackRoom');
-    if(r) r.innerHTML='<div class="card" style="margin-bottom:10px;border-color:rgba(255,95,126,.35)"><div class="trackline"><span class="muted">['+nowTime()+']</span> SAIU: O alvo saiu da sala de ID '+esc(e.room)+'</div></div>';
-    const o=$('#trackOcc'); if(o) o.innerHTML='';
+    const isPriv=(lastPrivacy==='PRIVADA');
+    const active = isPriv ? $('#privRoom') : (lastPrivacy==='PUBLICA' ? $('#pubRoom') : null);
+    const activeOcc = isPriv ? $('#privOcc') : (lastPrivacy==='PUBLICA' ? $('#pubOcc') : null);
+    if(active) active.innerHTML='<div class="trackline"><span class="muted">['+nowTime()+']</span> SAIU: O alvo saiu da sala de ID '+esc(e.room)+'</div>';
+    if(activeOcc) activeOcc.innerHTML='';
   }
   else if(t==='track_stopped'){
     const st=$('#trackStatus'); if(st) st.textContent='rastreio parado';
