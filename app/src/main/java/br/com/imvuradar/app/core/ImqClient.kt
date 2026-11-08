@@ -40,6 +40,12 @@ class ImqClient(private val onEvent: (JSONObject) -> Unit) {
     private var cid = ""
     private var sessionId = ""
     private var authed = false
+    private var opId = 1000
+    private var connectOp = 0
+    private val pending = java.util.concurrent.ConcurrentHashMap<Int, (Int) -> Unit>()
+
+    /** chamado quando o connect recebe status 0 (usado pelo probe) */
+    var onReady: (() -> Unit)? = null
 
     @Volatile var connected = false
         private set
@@ -49,6 +55,11 @@ class ImqClient(private val onEvent: (JSONObject) -> Unit) {
 
     private val targetQueues = LinkedHashSet<String>()
     private val extraQueues = LinkedHashSet<String>()
+
+    private fun nextOp(): Int {
+        opId++
+        return opId
+    }
 
     private fun b64(s: String): String =
         Base64.encodeToString(s.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
@@ -104,11 +115,13 @@ class ImqClient(private val onEvent: (JSONObject) -> Unit) {
                         .put("key", "platform")
                         .put("value", b64("web"))
                 )
+                connectOp = nextOp()
                 val connect = JSONObject()
                     .put("record", "msg_c2g_connect")
                     .put("user_id", cid)
                     .put("cookie", b64(sessionId))
                     .put("metadata", meta)
+                    .put("op_id", connectOp)
                 webSocket.send(connect.toString())
                 lastMessageAt = System.currentTimeMillis()
             }
@@ -180,13 +193,62 @@ class ImqClient(private val onEvent: (JSONObject) -> Unit) {
 
     private fun sendQueues(queues: List<String>) {
         for (chunk in queues.chunked(400)) {
-            val arr = JSONArray()
-            chunk.forEach { arr.put(it) }
+            val frames = JSONArray()
+            for (q in chunk) {
+                frames.put(
+                    JSONObject()
+                        .put("record", "subscription")
+                        .put("name", q)
+                        .put("op_id", nextOp())
+                )
+            }
             val msg = JSONObject()
                 .put("record", "msg_c2g_subscribe")
-                .put("queues", arr)
+                .put("queues_with_results", frames)
             ws?.send(msg.toString())
         }
+    }
+
+    /**
+     * Probe de liveness: conexao NOVA mede status 0/1 de chat-<alvo>-1..800.
+     * status 0 = fila viva = tem gente dentro daquela sala AGORA.
+     */
+    fun probeQueues(target: String, timeoutMs: Long = 25_000, callback: (List<String>) -> Unit) {
+        val queues = (1..800).map { "inv:/chat/chat-$target-$it" }
+        val live = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val remaining = java.util.concurrent.atomic.AtomicInteger(queues.size)
+        val done = java.util.concurrent.atomic.AtomicBoolean(false)
+        val finish = {
+            if (done.compareAndSet(false, true)) callback(live.toList())
+        }
+        val pairs = queues.map { q -> q to nextOp() }
+        for ((q, op) in pairs) {
+            pending[op] = { status ->
+                if (status == 0) live.add(q.removePrefix("inv:/chat/chat-"))
+                if (remaining.decrementAndGet() == 0) finish()
+            }
+        }
+        for (chunk in pairs.chunked(400)) {
+            val frames = JSONArray()
+            for ((q, op) in chunk) {
+                frames.put(
+                    JSONObject()
+                        .put("record", "subscription")
+                        .put("name", q)
+                        .put("op_id", op)
+                )
+            }
+            ws?.send(
+                JSONObject()
+                    .put("record", "msg_c2g_subscribe")
+                    .put("queues_with_results", frames)
+                    .toString()
+            )
+        }
+        Thread {
+            Thread.sleep(timeoutMs)
+            finish()
+        }.apply { isDaemon = true }.start()
     }
 
     fun ping() {
@@ -206,20 +268,28 @@ class ImqClient(private val onEvent: (JSONObject) -> Unit) {
         val m = try { JSONObject(text) } catch (e: Exception) { return }
         when (m.optString("record")) {
             "msg_g2c_result" -> {
-                if (m.has("error") && !m.isNull("error")) {
-                    android.util.Log.e("IMVURadar", "imq: erro de auth -> ${m.optString("error")}")
-                    onEvent(JSONObject().put("type", "imq_error").put("message", m.optString("error")))
-                } else if (!authed) {
-                    authed = true
-                    connected = true
-                    android.util.Log.i("IMVURadar", "imq: autenticado, abrindo floodgates")
-                    ws?.send(JSONObject().put("record", "msg_c2g_open_floodgates").toString())
-                    // o gateway precisa desse instante para registrar a 1a assinatura
-                    Thread {
-                        Thread.sleep(1200)
-                        if (authed) resubscribe()
-                    }.apply { isDaemon = true }.start()
-                    onEvent(JSONObject().put("type", "imq_ready"))
+                val op = m.optInt("op_id", -1)
+                if (op == connectOp) {
+                    val status = m.optInt("status", -1)
+                    val err = if (m.has("error") && !m.isNull("error")) m.optString("error") else ""
+                    if (status != 0 || err.isNotEmpty()) {
+                        android.util.Log.e("IMVURadar", "imq: connect falhou ($status $err)")
+                        onEvent(JSONObject().put("type", "imq_error").put("message", err.ifEmpty { "connect $status" }))
+                    } else if (!authed) {
+                        authed = true
+                        connected = true
+                        android.util.Log.i("IMVURadar", "imq: autenticado, abrindo floodgates")
+                        ws?.send(JSONObject().put("record", "msg_c2g_open_floodgates").toString())
+                        // o gateway precisa desse instante para registrar a 1a assinatura
+                        Thread {
+                            Thread.sleep(1200)
+                            if (authed) resubscribe()
+                        }.apply { isDaemon = true }.start()
+                        onReady?.invoke()
+                        onEvent(JSONObject().put("type", "imq_ready"))
+                    }
+                } else {
+                    pending.remove(op)?.invoke(m.optInt("status", 1))
                 }
             }
             "msg_g2c_send_message" -> {

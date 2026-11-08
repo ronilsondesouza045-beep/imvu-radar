@@ -145,11 +145,11 @@ object Tracker {
                 onHit = { rid, people ->
                     if (seen.add(rid)) {
                         hits.add(Pair(rid, people))
+                        imq.subscribeRoom(rid)
                         emitWhere(p, hits.toList())
                     }
                 },
-                deadlineMs = System.currentTimeMillis() + 25_000,
-                onRoom = { rid -> imq.subscribeRoom(rid) }
+                deadlineMs = System.currentTimeMillis() + 25_000
             )
 
             // salas proprias do alvo (publicas/listadas)
@@ -208,6 +208,9 @@ object Tracker {
             emit(JSONObject().put("type", "track_start").put("target", personJson(p)))
             emit(JSONObject().put("type", "track_status").put("msg", "conectando ao IMQ e procurando a sala..."))
 
+            // probe de liveness: conexao nova, status 0 nas filas chat-<alvo>-*
+            pool.submit { probeLoop(p.cid) }
+
             // busca inicial nas listas/salas do alvo (publicas). O IMQ confirma
             // a sala real e entrega o roster de privada.
             val hits = mutableListOf<Pair<String, List<Person>>>()
@@ -216,8 +219,7 @@ object Tracker {
                     api.findAllRoomsFor(
                         p.cid,
                         listOf("friends", "recent", "explore"),
-                        deadlineMs = System.currentTimeMillis() + 15_000,
-                        onRoom = { rid -> imq.subscribeRoom(rid) }
+                        deadlineMs = System.currentTimeMillis() + 15_000
                     )
                 )
             } catch (_: Exception) { }
@@ -229,6 +231,43 @@ object Tracker {
             } else if (currentRoom == null) {
                 emit(JSONObject().put("type", "track_status").put("msg", "aguardando evento do IMQ..."))
             }
+        }
+    }
+
+    private fun probeLiveness(target: String, callback: (List<String>) -> Unit) {
+        val probe = ImqClient { }
+        probe.onReady = {
+            probe.probeQueues(target) { live ->
+                callback(live)
+                probe.stop()
+            }
+        }
+        probe.connect(api.cid, api.sessionId)
+    }
+
+    private fun probeLoop(target: String) {
+        while (targetCid == target) {
+            val latch = java.util.concurrent.CountDownLatch(1)
+            val ref = java.util.concurrent.atomic.AtomicReference<List<String>>(emptyList())
+            probeLiveness(target) { live ->
+                ref.set(live)
+                latch.countDown()
+            }
+            latch.await(30, java.util.concurrent.TimeUnit.SECONDS)
+            if (targetCid != target) break
+            val live = ref.get()
+            if (live.isNotEmpty()) {
+                if (currentRoom == null && live.size == 1) {
+                    setCurrentRoom(live[0])
+                } else if (currentRoom == null && live.size > 1) {
+                    emit(JSONObject().put("type", "track_status").put("msg", "varias salas ativas; aguardando evento..."))
+                } else if (live.size == 1 && currentRoom != live[0]) {
+                    setCurrentRoom(live[0])
+                }
+            } else if (currentRoom == null) {
+                emit(JSONObject().put("type", "track_status").put("msg", "aguardando evento do IMQ..."))
+            }
+            Thread.sleep(15_000)
         }
     }
 
