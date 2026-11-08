@@ -33,6 +33,8 @@ object Tracker {
 
     private var credentials: Pair<String, String>? = null
 
+    @Volatile private var botUser: String = Config.DEFAULT_USER
+
     @Volatile private var targetCid: String? = null
     @Volatile private var targetNick: String = ""
     @Volatile private var targetProfile: JSONObject? = null
@@ -84,8 +86,9 @@ object Tracker {
                 credentials = use
                 if (api.login(use.first, use.second)) {
                     reconnecting = false
+                    botUser = use.first
                     emit(JSONObject().put("type", "ready").put("imq", true))
-                    imq.connect(api.cid, api.sessionId)
+                    imq.connect(api.cid, api.sessionId, use.first)
                     targetCid?.let { imq.setTarget(it) }
                     return@submit
                 }
@@ -108,8 +111,9 @@ object Tracker {
         credentials = Pair(user, pass)
         pool.submit {
             if (api.login(user, pass)) {
+                botUser = user
                 emit(JSONObject().put("type", "ready").put("imq", true))
-                imq.connect(api.cid, api.sessionId)
+                imq.connect(api.cid, api.sessionId, user)
                 targetCid?.let { imq.setTarget(it) }
             } else {
                 emit(JSONObject().put("type", "login_error").put("message", api.lastError))
@@ -242,7 +246,7 @@ object Tracker {
                 probe.stop()
             }
         }
-        probe.connect(api.cid, api.sessionId)
+        probe.connect(api.cid, api.sessionId, botUser)
     }
 
     private fun probeLoop(target: String) {

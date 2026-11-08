@@ -39,6 +39,7 @@ class ImqClient(private val onEvent: (JSONObject) -> Unit) {
 
     private var cid = ""
     private var sessionId = ""
+    private var username = ""
     private var authed = false
     private var opId = 1000
     private var connectOp = 0
@@ -64,12 +65,15 @@ class ImqClient(private val onEvent: (JSONObject) -> Unit) {
     private fun b64(s: String): String =
         Base64.encodeToString(s.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
 
-    fun connect(cid: String, sessionId: String) {
+    fun connect(cid: String, sessionId: String, username: String = "") {
         this.cid = cid
         this.sessionId = sessionId
+        this.username = username
         stopped = false
         authed = false
         connected = false
+        try { ws?.close(1000, "reconnect") } catch (_: Exception) { }
+        ws = null
         openSocket()
         startWatchdog()
         startKeepalive()
@@ -103,18 +107,32 @@ class ImqClient(private val onEvent: (JSONObject) -> Unit) {
 
     private fun openSocket() {
         if (stopped) return
-        val req = Request.Builder().url(Config.WS).header("User-Agent", Config.UA).build()
+        val builder = Request.Builder()
+            .url(Config.WS)
+            .header("User-Agent", Config.UA)
+            .header("Origin", "https://www.imvu.com")
+        if (username.isNotEmpty()) {
+            builder.header("Cookie", "_imvu_avnm=$username")
+        }
+        val req = builder.build()
         ws = client.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 attempt = 0
                 authed = false
                 android.util.Log.i("IMVURadar", "imq: conectado, autenticando")
-                val meta = JSONArray().put(
-                    JSONObject()
-                        .put("record", "metadata")
-                        .put("key", "platform")
-                        .put("value", b64("web"))
-                )
+                val meta = JSONArray()
+                    .put(
+                        JSONObject()
+                            .put("record", "metadata")
+                            .put("key", "app")
+                            .put("value", b64("imvu_next"))
+                    )
+                    .put(
+                        JSONObject()
+                            .put("record", "metadata")
+                            .put("key", "platform_type")
+                            .put("value", b64("big"))
+                    )
                 connectOp = nextOp()
                 val connect = JSONObject()
                     .put("record", "msg_c2g_connect")
