@@ -195,6 +195,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun setRoomName(rid: String, name: String): String {
+            Tracker.setRoomName(rid, name)
+            return "ok"
+        }
+
+        @JavascriptInterface
         fun status(): String = Tracker.status().toString()
 
         /** render do IMVU com sessao -> data URI (imagens do imvu pedem login) */

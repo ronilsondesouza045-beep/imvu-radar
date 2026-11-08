@@ -3,6 +3,7 @@ package br.com.imvuradar.app.core
 import br.com.imvuradar.app.App
 import br.com.imvuradar.app.Config
 import br.com.imvuradar.app.Notifications
+import br.com.imvuradar.app.RoomNames
 import br.com.imvuradar.app.SecureStore
 import org.json.JSONArray
 import org.json.JSONObject
@@ -273,6 +274,21 @@ object Tracker {
                 emit(JSONObject().put("type", "track_status").put("msg", "aguardando evento do IMQ..."))
             }
             Thread.sleep(15_000)
+        }
+    }
+
+    /** apelido manual para sala privada (a API 403 nao devolve o nome) */
+    fun setRoomName(rid: String, name: String) {
+        if (rid.isBlank() || name.isBlank()) return
+        try { RoomNames.set(App.ctx, rid, name) } catch (_: Exception) { }
+        api.invalidateRoomLabel(rid)
+        pool.submit {
+            if (currentRoom == rid) {
+                val label = api.roomLabel(rid)
+                currentName = label.first
+                currentPrivacy = label.second
+                emitTrackRoom()
+            }
         }
     }
 

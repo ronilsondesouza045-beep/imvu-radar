@@ -1,6 +1,8 @@
 package br.com.imvuradar.app.core
 
+import br.com.imvuradar.app.App
 import br.com.imvuradar.app.Config
+import br.com.imvuradar.app.RoomNames
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -45,6 +47,7 @@ class ImvuApi {
     private val jsonType = "application/json; charset=utf-8".toMediaType()
     private val _rosterCache = HashMap<String, Pair<Long, List<Person>>>()
     private val _userCache = HashMap<String, Pair<Long, String>>()
+    private val _roomNames = HashMap<String, String>()
 
     private fun cookieHeader(): String =
         cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
@@ -225,7 +228,13 @@ class ImvuApi {
             if (!k.endsWith("/rooms")) continue
             val items = den.optJSONObject(k)?.optJSONObject("data")?.optJSONArray("items") ?: JSONArray()
             for (i in 0 until items.length()) {
-                out.add(items.getString(i).substringAfterLast('/').removePrefix("room-"))
+                val itemUrl = items.getString(i)
+                val rid = itemUrl.substringAfterLast('/').removePrefix("room-")
+                out.add(rid)
+                // aproveita o nome que vem denormalizado na lista (quando vier)
+                val d = den.optJSONObject(itemUrl)?.optJSONObject("data")
+                val name = d?.optString("name") ?: ""
+                if (name.isNotEmpty()) _roomNames[rid] = name
             }
         }
         return out
@@ -329,17 +338,29 @@ class ImvuApi {
         return out
     }
 
-    /** nome + privacidade. Sala privada de terceiro vem 403 -> fallback pelo numero. */
+    /** nome + privacidade. Sala privada de terceiro vem 403 -> apelido ou fallback. */
     fun roomLabel(rid: String): Pair<String, String> {
         val m = roomJson(rid)
         val n = rid.substringAfterLast('-', "0")
+        val alias = try { RoomNames.get(App.ctx, rid) } catch (_: Exception) { "" }
+        val cached = _roomNames[rid] ?: ""
         if (m.optBoolean("restricted")) {
-            val name = if (n == "1") "My Room" else "Sala privada $n"
+            val name = alias.ifBlank {
+                cached.ifBlank {
+                    if (n == "1") "My Room" else "Sala privada $n"
+                }
+            }
             return Pair(name, "PRIVADA")
         }
-        val name = m.optString("name", rid).ifBlank { rid }
+        val name = alias.ifBlank {
+            m.optString("name", "").ifBlank { cached.ifBlank { rid } }
+        }
         val privacy = if (m.optString("privacy") == "private") "PRIVADA" else "PUBLICA"
         return Pair(name, privacy)
+    }
+
+    fun invalidateRoomLabel(rid: String) {
+        _labels.remove(rid)
     }
 
     fun enterRoom(rid: String): Int {
