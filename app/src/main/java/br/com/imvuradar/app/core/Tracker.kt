@@ -238,6 +238,9 @@ object Tracker {
             // probe roda na MESMA conexao IMQ e em thread propria: nunca segura o pool
             startProbeLoop(p.cid, gen)
 
+            // publicas: thread paralela (aditiva, nao interfere no fluxo privado/IMQ)
+            PublicWatch.start(p.cid, p.username) { evt -> onPublicHit(evt) }
+
             // fonte extra: salas privadas que o indice do catvu ja conhece
             pool.submit {
                 val hint = try { api.catvuRooms(p.username) } catch (_: Exception) { emptyList() }
@@ -433,6 +436,7 @@ object Tracker {
 
     fun stopTrack() {
         probeGen.incrementAndGet()
+        PublicWatch.stop()
         synchronized(this) {
             targetCid = null
             targetNick = ""
@@ -526,6 +530,36 @@ object Tracker {
                 }
             }
         }
+    }
+
+    /**
+     * Hit do rastreio de publicas. O privado manda: se o IMQ ja apontou uma
+     * sala privada, nao dispara alerta de publica (evita falso positivo).
+     */
+    private fun onPublicHit(evt: JSONObject) {
+        emit(evt)
+        if (currentPrivacy == "PRIVADA") return
+        val room = evt.optJSONObject("room") ?: return
+        val links = evt.optJSONObject("links") ?: JSONObject()
+        val rid = room.optString("roomId")
+        val name = room.optString("name").ifBlank { rid }
+        val web = links.optString("web")
+        val imvu = links.optString("imvu")
+        val text = StringBuilder()
+            .append(targetNick)
+            .append(" esta na sala publica \"")
+            .append(name)
+            .append("\" (ID: ")
+            .append(rid)
+            .append(")")
+        if (web.isNotEmpty()) text.append("\n").append(web)
+        if (imvu.isNotEmpty()) text.append("\n").append(imvu)
+        Notifications.alert(App.ctx, "SALA PUBLICA", text.toString())
+        emit(
+            JSONObject().put("type", "log")
+                .put("msg", "[PUBLIC] $targetNick -> $name (ID: $rid)")
+                .put("links", links)
+        )
     }
 
     private fun setCurrentRoom(room: String, seed: List<Person>? = null, via: String = "imq") {

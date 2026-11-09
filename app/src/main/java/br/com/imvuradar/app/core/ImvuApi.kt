@@ -17,7 +17,8 @@ data class Person(
     val render: String,
     val isVip: Boolean = false,
     val isAp: Boolean = false,
-    val online: Boolean = false
+    val online: Boolean = false,
+    val portrait: String = ""
 )
 
 /** sala atual de um amigo, ja com o no da sala denormalizado na lista do IMVU */
@@ -204,7 +205,8 @@ class ImvuApi {
                 render = d.optString("avatar_image", ""),
                 isVip = d.optBoolean("is_vip"),
                 isAp = d.optBoolean("is_ap"),
-                online = d.optBoolean("online")
+                online = d.optBoolean("online"),
+                portrait = d.optString("avatar_portrait_image", "")
             )
         }
         return null
@@ -287,7 +289,8 @@ class ImvuApi {
                             render = d.optString("avatar_image", ""),
                             isVip = d.optBoolean("is_vip"),
                             isAp = d.optBoolean("is_ap"),
-                            online = d.optBoolean("online")
+                            online = d.optBoolean("online"),
+                            portrait = d.optString("avatar_portrait_image", "")
                         )
                     )
                 }
