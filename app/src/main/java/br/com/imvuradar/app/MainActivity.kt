@@ -204,6 +204,20 @@ class MainActivity : AppCompatActivity() {
             return "ok"
         }
 
+        /** abre link externo (a WebView bloqueia navegacao interna) */
+        @JavascriptInterface
+        fun openLink(url: String): String {
+            if (url.isBlank()) return "ok"
+            try {
+                startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            } catch (_: Exception) {
+            }
+            return "ok"
+        }
+
         @JavascriptInterface
         fun status(): String = Tracker.status().toString()
 

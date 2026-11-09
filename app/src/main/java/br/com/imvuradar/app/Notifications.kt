@@ -29,15 +29,25 @@ object Notifications {
         }
     }
 
-    fun alert(ctx: Context, title: String, text: String) {
+    fun alert(ctx: Context, title: String, text: String, viewUrl: String? = null) {
         try {
             ensureChannel(ctx)
-            val intent = Intent(ctx, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            val pi = PendingIntent.getActivity(
-                ctx, 0, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
+            // com url, o toque abre a sala direto no navegador; sem url, abre o app
+            val pi = if (!viewUrl.isNullOrBlank()) {
+                val view = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(viewUrl))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                PendingIntent.getActivity(
+                    ctx, viewUrl.hashCode(), view,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+            } else {
+                val intent = Intent(ctx, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                PendingIntent.getActivity(
+                    ctx, 0, intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+            }
             val n = NotificationCompat.Builder(ctx, CHANNEL)
                 .setSmallIcon(android.R.drawable.stat_notify_chat)
                 .setContentTitle(title)

@@ -115,7 +115,7 @@ window.__radarImage=function(id,data){
   imgCache[id]=data;
   document.querySelectorAll('img[data-imgid="'+id+'"]').forEach(function(el){ if(data) el.src=data; });
 };
-const TABS=[['onde','🔎','Onde'],['privada','🔒','Privada'],['ajustes','⚙','Ajustes']];
+const TABS=[['onde','🔎','Onde'],['privada','🔒','Privada'],['publica','🌐','Pública'],['ajustes','⚙','Ajustes']];
 let TAB=(location.hash||'').replace('#','');
 if(!TABS.some(t=>t[0]===TAB)) TAB='onde';
 
@@ -148,6 +148,13 @@ const V={
     <h2>Movimento da sala</h2>
     <div id="trackLog" class="list"></div>
   </div>`,
+  publica:()=>`<div class="card" style="border-color:rgba(33,212,253,.35)"><h1 style="color:#a8ecff">Sala pública</h1>
+    <p class="sub">monitor automático das salas públicas do alvo (roda junto com o rastreio)</p>
+    <div id="pubStatus" class="muted mono" style="font-size:12px"></div>
+    <div id="pubRoom" style="margin-top:10px"></div>
+    <h2>Última detecção</h2>
+    <div id="pubLog" class="list"></div>
+  </div>`,
   ajustes:()=>`<div class="card"><h1>Ajustes</h1><p class="sub">conexão e atualização</p>
     <button class="ghost" onclick="act('status')">Ver status</button>
     <div class="row2" style="margin-top:9px"><button onclick="act('update')">Verificar atualização</button></div>
@@ -159,6 +166,7 @@ function render(){
   $('#app').innerHTML = V[TAB]();
   if(TAB==='onde'){ const n=$('#nick'); if(n) n.value=lastNick||''; }
   if(TAB==='privada'){ const n=$('#trackNick'); if(n) n.value=trackNick||''; }
+  if(TAB==='publica'){ renderPublic(lastPublic); if(!window.Radar) loadRemotePublic(); }
   if(!window.Radar && (TAB==='onde' || TAB==='privada')) loadRemoteStatus();
 }
 
@@ -166,6 +174,7 @@ let lastNick='';
 let trackNick='';
 let lastTrackTarget=null;
 let lastPrivacy='';
+let lastPublic=null;
 let lastRemoteAt=0;
 let lastRemoteImq=false;
 
@@ -269,6 +278,7 @@ function clearTrackUI(){
   const av=$('#trackAvatar'); if(av) av.src='';
   lastTrackTarget=null;
   lastPrivacy='';
+  lastPublic=null;
 }
 
 function logTrack(html,cls){
@@ -287,6 +297,65 @@ function setOccupants(list,total){
   const t=(total!=null)?total:nomes.length;
   const o=$('#privOcc');
   if(o) o.innerHTML='<span class="muted">['+nowTime()+']</span> OCUPANTES ATUAIS: '+(nomes.length?esc(nomes.join(', ')):'(ninguem)')+' (Total: '+t+')';
+}
+
+function openRoom(u){
+  if(!u) return;
+  try{ if(window.Radar && Radar.openLink){ Radar.openLink(u); return; } }catch(_){}
+  try{ window.open(u,'_blank'); }catch(_){}
+}
+
+function renderPublic(e){
+  const st=$('#pubStatus');
+  if(st) st.textContent = trackNick ? ('alvo monitorado: '+trackNick) : 'inicie o rastreio na aba Privada';
+  const box=$('#pubRoom'); const log=$('#pubLog');
+  if(!box) return;
+  if(!e){
+    box.innerHTML='<div class="empty">nenhuma sala pública detectada ainda</div>';
+    if(log) log.innerHTML='';
+    return;
+  }
+  const r=e.room||{}, links=e.links||{}, ppl=e.people||[];
+  const cover=r.cover||r.render||'';
+  let h='';
+  if(cover){
+    h+='<div class="roomcover"><img src="'+esc(cover)+'"><div class="ov"><div class="rm">'+esc(r.name||r.roomId||'sala')+'</div>'+
+      '<div class="muted mono" style="font-size:11.5px">['+esc(r.roomId||'')+'] · '+(r.occupancy||ppl.length||'?')+'/'+(r.capacity||'?')+'</div></div></div>';
+  } else {
+    h+='<div class="rm">'+esc(r.name||r.roomId||'sala')+' <span class="muted mono">['+esc(r.roomId||'')+']</span></div>';
+  }
+  h+='<div class="badges" style="margin:8px 0">'+tagRoom(r.privacy)+(r.owner?'<span class="muted">dono: '+esc(r.owner)+'</span>':'')+
+     '<span class="muted">pessoas: '+(ppl.length||r.occupancy||0)+'</span></div>';
+  h+=peopleGrid(ppl,'ninguém visível');
+  if(links.web||links.imvu){
+    h+='<div class="row2" style="margin-top:10px">'+
+      (links.web?'<button class="ghost" onclick="openRoom(\''+esc(links.web)+'\')">Abrir no navegador</button>':'')+
+      (links.imvu?'<button class="ghost" onclick="openRoom(\''+esc(links.imvu)+'\')">Abrir no IMVU</button>':'')+
+      '</div>';
+  }
+  box.innerHTML=h;
+  if(log){
+    const when=e.ts?new Date(e.ts).toLocaleTimeString('pt-BR'):nowTime();
+    const who=(e.target&&(e.target.nick||e.target.cid))||trackNick||'alvo';
+    log.innerHTML='<div class="line"><div class="i"><div class="n trackline">ALVO EM SALA PÚBLICA: '+esc(who)+' · '+esc(r.name||r.roomId||'')+
+      ' (ID '+esc(r.roomId||'')+')</div><div class="t">'+esc(when)+'</div></div><span class="a in">AQUI</span></div>';
+  }
+}
+
+async function loadRemotePublic(){
+  if(window.Radar) return;
+  try{
+    const s=await api('/api/status');
+    const p=s&&s.pubRoom;
+    const st=$('#pubStatus');
+    if(st) st.textContent=p?('remoto: sala '+(p.name||p.roomId)):'sem detecção pública no APK';
+    const box=$('#pubRoom');
+    if(box && p){
+      box.innerHTML='<div class="rm">'+esc(p.name||p.roomId)+' <span class="muted mono">['+esc(p.roomId)+']</span></div>'+
+        '<div class="badges" style="margin:8px 0">'+tagRoom(p.privacy)+'<span class="muted">pessoas: '+(p.occupancy||0)+'</span></div>'+
+        '<div class="empty">nick não é exibido no site</div>';
+    }
+  }catch(_){}
 }
 
 function toast(msg){
@@ -377,13 +446,17 @@ window.__radarEvent = function(e){
       if(r) r.innerHTML='<div class="trackline"><span class="muted">['+nowTime()+']</span> ALVO AQUI: '+esc(nick)+' está na sala "'+esc(name)+'" (ID: '+esc(e.room)+') - '+esc(priv)+via+'</div>';
       setOccupants(e.occupants||[], e.total);
     } else {
-      if(r) r.innerHTML='<div class="empty">Alvo em sala pública — veja a aba Onde.</div>';
+      if(r) r.innerHTML='<div class="empty">Alvo em sala pública — veja a aba Pública.</div>';
       if(o) o.innerHTML='';
     }
     if(tg.avatar){ const av=$('#trackAvatar'); if(av) av.src=tg.avatar; }
   }
   else if(t==='track_occupants'){
     setOccupants(e.occupants||[], e.total);
+  }
+  else if(t==='public_room'){
+    lastPublic=e;
+    if(TAB==='publica') renderPublic(e);
   }
   else if(t==='track_join'){
     if(lastPrivacy==='PRIVADA'){
@@ -478,7 +551,7 @@ async function loadRemoteStatus(){
         if(r) r.innerHTML='<div class="trackline"><span class="muted">['+nowTime()+']</span> ALVO AQUI: sala "'+esc(s.roomName||s.room)+'" (ID: '+esc(s.room)+') - '+esc(priv)+via+'</div>';
         if(o) o.innerHTML='<span class="muted">['+nowTime()+']</span> OCUPANTES: '+(s.occupants||0);
       } else if(s.room){
-        if(r) r.innerHTML='<div class="empty">Alvo em sala pública — veja a aba Onde.</div>';
+        if(r) r.innerHTML='<div class="empty">Alvo em sala pública — veja a aba Pública.</div>';
         if(o) o.innerHTML='';
       } else {
         if(r) r.innerHTML='';

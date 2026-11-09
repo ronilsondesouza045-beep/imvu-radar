@@ -50,6 +50,7 @@ object Tracker {
     @Volatile private var currentDetectedBy: String = ""
     @Volatile private var settingRoom: String? = null
     @Volatile private var lastWhere: JSONObject? = null
+    @Volatile private var lastPublic: JSONObject? = null
     private var roomSeq = 0
 
     private val roster = LinkedHashMap<String, String>()
@@ -223,6 +224,7 @@ object Tracker {
                 currentDetectedBy = ""
                 settingRoom = null
                 roomSeq++
+                lastPublic = null
                 synchronized(rosterLock) { roster.clear() }
             }
 
@@ -451,6 +453,7 @@ object Tracker {
             currentDetectedBy = ""
             settingRoom = null
             roomSeq++
+            lastPublic = null
             synchronized(rosterLock) { roster.clear() }
         }
         imq.clearTarget()
@@ -607,6 +610,7 @@ object Tracker {
      * sala privada, nao dispara alerta de publica (evita falso positivo).
      */
     private fun onPublicHit(evt: JSONObject) {
+        lastPublic = evt
         emit(evt)
         if (currentPrivacy == "PRIVADA") return
         val room = evt.optJSONObject("room") ?: return
@@ -615,16 +619,33 @@ object Tracker {
         val name = room.optString("name").ifBlank { rid }
         val web = links.optString("web")
         val imvu = links.optString("imvu")
+
+        // snapshot do roster público (mesma lista que a aba mostra)
+        val alvo = targetCid
+        val people = evt.optJSONArray("people") ?: JSONArray()
+        val com = mutableListOf<String>()
+        for (i in 0 until people.length()) {
+            val p = people.optJSONObject(i) ?: continue
+            val cid = p.optString("cid")
+            if (cid == alvo) continue
+            val who = p.optString("username").ifBlank { p.optString("display_name") }
+            if (who.isBlank() || who == "?" || who == cid) continue
+            com.add(who)
+        }
+
         val text = StringBuilder()
-            .append(targetNick)
-            .append(" esta na sala publica \"")
-            .append(name)
-            .append("\" (ID: ")
-            .append(rid)
-            .append(")")
+        if (com.isEmpty()) {
+            text.append(targetNick).append(" está sozinho na sala pública \"").append(name).append("\"")
+        } else {
+            text.append(targetNick).append(" está na sala pública \"").append(name).append("\"")
+            text.append("\nEstá com: ").append(com.joinToString(", "))
+                .append(" (Total: ").append(com.size).append(")")
+        }
+        if (rid.isNotEmpty()) text.append("\nID: ").append(rid)
         if (web.isNotEmpty()) text.append("\n").append(web)
         if (imvu.isNotEmpty()) text.append("\n").append(imvu)
-        Notifications.alert(App.ctx, "SALA PUBLICA", text.toString())
+        val open = web.ifBlank { imvu }.takeIf { it.isNotBlank() }
+        Notifications.alert(App.ctx, "SALA PÚBLICA", text.toString(), open)
         emit(
             JSONObject().put("type", "log")
                 .put("msg", "[PUBLIC] $targetNick -> $name (ID: $rid)")
@@ -783,6 +804,19 @@ object Tracker {
         out.put("roomName", currentName)
         out.put("detectedBy", currentDetectedBy)
         out.put("where", publicWhere(lastWhere))
+        val pub = lastPublic
+        if (pub != null) {
+            val r = pub.optJSONObject("room") ?: JSONObject()
+            out.put(
+                "pubRoom", JSONObject()
+                    .put("roomId", r.optString("roomId"))
+                    .put("name", r.optString("name").ifBlank { r.optString("roomId") })
+                    .put("privacy", r.optString("privacy"))
+                    .put("occupancy", r.optInt("occupancy"))
+                    .put("capacity", r.optInt("capacity"))
+                    .put("ts", pub.optLong("ts"))
+            )
+        }
         return out
     }
 }

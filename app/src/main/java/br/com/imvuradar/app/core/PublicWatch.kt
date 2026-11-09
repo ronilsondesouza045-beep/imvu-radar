@@ -26,12 +26,16 @@ object PublicWatch {
 
     private val gen = AtomicInteger(0)
     private val lastRoom = HashMap<String, String>()
+    private val missStreak = HashMap<String, Int>()
     @Volatile private var roomCacheAt = 0L
     @Volatile private var roomCache: List<String> = emptyList()
 
     fun start(targetCid: String, nick: String, onHit: (JSONObject) -> Unit) {
         val myGen = gen.incrementAndGet()
-        synchronized(lastRoom) { lastRoom.remove(targetCid) }
+        synchronized(lastRoom) {
+            lastRoom.remove(targetCid)
+            missStreak.remove(targetCid)
+        }
         val api = Tracker.api
         val t = Thread {
             Log.i(TAG, "[public] vigiando salas publicas para $nick (cid $targetCid)")
@@ -69,7 +73,7 @@ object PublicWatch {
         if (rooms.isEmpty()) return
         for (rid in rooms) {
             if (gen.get() != myGen) return
-            val people = api.roster(rid)
+            val people = try { api.roster(rid) } catch (_: Exception) { emptyList() }
             if (people.none { it.cid == targetCid }) continue
 
             val meta = api.roomJson(rid)
@@ -77,20 +81,23 @@ object PublicWatch {
             if (meta.optString("privacy").equals("private", true)) continue
             if (meta.optBoolean("restricted", false)) continue
 
+            // mesma sala do ultimo alerta: nao repete a notificacao
+            val mudou = synchronized(lastRoom) {
+                missStreak[targetCid] = 0
+                val anterior = lastRoom[targetCid]
+                lastRoom[targetCid] = rid
+                anterior != rid
+            }
+            if (!mudou) return
+
             val owner = meta.optString("owner").ifBlank {
                 val head = rid.substringBefore("-")
                 if (head.isNotEmpty() && head.all { it.isDigit() }) api.usernameOf(head) else ""
             }
             meta.put("owner", owner)
             val links = deepLinks(rid, owner, meta.optString("name"))
+            // so baixa avatar/gera evento quando a sala realmente mudou
             val files = saveAvatars(api, rid, people)
-
-            val anterior = synchronized(lastRoom) {
-                val prev = lastRoom[targetCid]
-                lastRoom[targetCid] = rid
-                prev
-            }
-            if (anterior == rid) return
 
             logBlock(nick, meta, links, people, files)
             val evt = JSONObject()
@@ -103,7 +110,17 @@ object PublicWatch {
             onHit(evt)
             return
         }
-        synchronized(lastRoom) { lastRoom.remove(targetCid) }
+        // nao encontrou em nenhuma sala: so esquece o estado depois de 3 scans
+        // seguidos, senao roster instavel re-notifica a mesma sala toda hora
+        synchronized(lastRoom) {
+            val faltas = (missStreak[targetCid] ?: 0) + 1
+            if (faltas >= 3) {
+                missStreak[targetCid] = 0
+                lastRoom.remove(targetCid)
+            } else {
+                missStreak[targetCid] = faltas
+            }
+        }
     }
 
     /** ids de salas publicas das listas oficiais (cache curto) */
