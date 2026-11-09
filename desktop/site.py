@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import imvu_core
+import imvu_public
 from imvu_core import Imvu, ImqWatcher
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -37,6 +38,7 @@ name_q = queue.Queue()
 inside_cache = {}
 last_seen = {}          # cid -> {room, ts}
 watch_targets = {}      # cid -> nick (alerta ao vivo)
+public_tracker = None   # rastreio de salas publicas (imvu_public.PublicTracker)
 
 
 # ---------------- SSE broker ----------------
@@ -125,7 +127,7 @@ watcher = ImqWatcher(imvu, on_imq)
 
 @app.on_event("startup")
 async def startup():
-    global loop
+    global loop, public_tracker
     loop = asyncio.get_running_loop()
 
     def boot():
@@ -144,6 +146,65 @@ async def startup():
         push({"type": "log", "msg": "IMQ conectado: %d sala(s) monitorada(s)" % len(watcher.rooms)})
 
     threading.Thread(target=boot, daemon=True).start()
+
+    # rastreio de salas publicas: task asyncio aditiva, sem tocar no fluxo privado
+    def public_log(msg):
+        print(msg, flush=True)
+        push({"type": "log", "msg": msg})
+
+    def public_alert(evt):
+        # reusa o evento "alert" que o consumidor de notificacao ja escuta,
+        # e publica tambem o payload completo em "public_alert"
+        t = evt.get("target") or {}
+        room = evt.get("room") or {}
+        rid = room.get("roomId") or ""
+        if evt.get("type") == "public_leave":
+            push({"type": "public_leave", "target": t, "room": room})
+            push(
+                {
+                    "type": "alert",
+                    "cid": t.get("cid"),
+                    "nick": t.get("nick"),
+                    "room": rid,
+                    "action": "deleted",
+                    "person": {"username": t.get("nick")},
+                }
+            )
+            return
+        person = None
+        for p in evt.get("people") or []:
+            if str(p.get("cid")) == str(t.get("cid")):
+                person = p
+                break
+        push(
+            {
+                "type": "public_alert",
+                "target": t,
+                "room": room,
+                "people": evt.get("people"),
+                "links": evt.get("links"),
+            }
+        )
+        push(
+            {
+                "type": "alert",
+                "cid": t.get("cid"),
+                "nick": t.get("nick"),
+                "room": rid,
+                "action": "created",
+                "person": person or {"username": t.get("nick")},
+            }
+        )
+
+    public_tracker = imvu_public.PublicTracker(
+        imvu,
+        avatars_dir=os.path.join(HERE, "avatars"),
+        interval=20,
+        on_alert=public_alert,
+        on_log=public_log,
+        on_rooms=lambda rids: [watcher.watch(r) for r in rids],
+    )
+    public_tracker.start(loop)
 
 
 @app.get("/")
@@ -299,6 +360,49 @@ async def watch_target(nick: str = Query(...)):
     watch_targets[str(p["cid"])] = p["username"]
     push({"type": "log", "msg": "alerta ao vivo ligado para %s (cid %s)" % (p["username"], p["cid"])})
     return {"ok": True, "cid": p["cid"], "username": p["username"]}
+
+
+# ---------------- salas publicas (modulo imvu_public) ----------------
+@app.get("/api/public/watch")
+async def public_watch(nick: str = Query(...)):
+    """registra o alvo no rastreio de publicas e roda uma varredura imediata"""
+    if public_tracker is None:
+        return {"error": "tracker publico nao iniciado"}
+
+    def job():
+        p = public_tracker.add_target(nick)
+        if not p:
+            push({"type": "log", "msg": "publico: nao achei o nick %s" % nick})
+            return
+        public_tracker.scan_once()
+
+    threading.Thread(target=job, daemon=True).start()
+    return {"queued": nick}
+
+
+@app.get("/api/public/unwatch")
+async def public_unwatch(nick: str = Query(...)):
+    ok = public_tracker.remove_target(nick) if public_tracker else False
+    return {"ok": ok}
+
+
+@app.get("/api/public/scan")
+async def public_scan(nick: str = Query(...)):
+    """checagem unica do nick nas salas publicas (forca o alerta se achar)"""
+    if public_tracker is None:
+        return {"error": "tracker publico nao iniciado"}
+
+    def job():
+        hits = public_tracker.scan_target(nick, force=True) if public_tracker else []
+        push({"type": "public_scan_done", "nick": nick, "hits": len(hits or [])})
+
+    threading.Thread(target=job, daemon=True).start()
+    return {"queued": nick}
+
+
+@app.get("/api/public/targets")
+async def public_targets():
+    return {"targets": public_tracker.snapshot() if public_tracker else []}
 
 
 @app.get("/api/enter")

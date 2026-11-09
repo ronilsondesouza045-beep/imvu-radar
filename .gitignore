@@ -5,5 +5,6 @@ local.properties
 *.iml
 .idea/
 desktop/bot.cfg
+desktop/avatars/
 desktop/__pycache__/
 *.pyc
