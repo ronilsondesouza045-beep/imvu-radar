@@ -55,6 +55,10 @@ object Tracker {
     private val roster = LinkedHashMap<String, String>()
     private val rosterLock = Any()
 
+    private val notifyLock = Any()
+    private var lastNotifyKey = ""
+    private var lastNotifyAt = 0L
+
     fun emit(evt: JSONObject) {
         lastEventAt = System.currentTimeMillis()
         try { listener?.invoke(evt) } catch (_: Exception) { }
@@ -453,6 +457,43 @@ object Tracker {
         emit(JSONObject().put("type", "track_stopped"))
     }
 
+    // ---------------- notificacoes com snapshot do roster ----------------
+
+    /**
+     * Nicks do roster em memoria (mesma fonte que a UI consome). Placeholders
+     * cid->cid ainda nao resolvidos ficam de fora. excludeCid remove do
+     * snapshot a pessoa que gerou o evento.
+     */
+    private fun rosterNicks(excludeCid: String? = null): List<String> = synchronized(rosterLock) {
+        roster.entries
+            .filter { it.key != excludeCid && it.value.isNotBlank() && it.value != it.key }
+            .map { it.value }
+    }
+
+    private fun joinText(nick: String, roomName: String, others: List<String>): String {
+        if (others.isEmpty()) return "$nick está sozinho em $roomName"
+        return "$nick entrou em $roomName\n" +
+            "Está com: ${others.joinToString(", ")} (Total: ${others.size})"
+    }
+
+    private fun leaveText(nick: String, roomName: String, remaining: List<String>): String {
+        if (remaining.isEmpty()) return "$nick saiu de $roomName\nSala vazia (Total: 0)"
+        return "$nick saiu de $roomName\n" +
+            "Restam: ${remaining.joinToString(", ")} (Total: ${remaining.size})"
+    }
+
+    /** debounce de 500ms por evento (acao+cid+sala); o texto ja vem do roster mais recente */
+    private fun notifyRoomEvent(action: String, cid: String, room: String, title: String, text: String) {
+        val key = "$action:$cid:$room"
+        synchronized(notifyLock) {
+            val now = System.currentTimeMillis()
+            if (key == lastNotifyKey && now - lastNotifyAt < 500L) return
+            lastNotifyKey = key
+            lastNotifyAt = now
+        }
+        Notifications.alert(App.ctx, title, text)
+    }
+
     private fun handlePresence(evt: JSONObject) {
         val target = targetCid ?: return
         val room = evt.optString("room")
@@ -470,6 +511,9 @@ object Tracker {
                 "deleted", "left" -> {
                     if (currentRoom == room) {
                         val eraPrivada = currentPrivacy == "PRIVADA"
+                        val roomName = currentName.ifBlank { room }
+                        // snapshot ANTES de limpar o estado: quem continua na sala
+                        val remaining = rosterNicks(excludeCid = target)
                         synchronized(this) {
                             roomSeq++
                             currentRoom = null
@@ -480,9 +524,9 @@ object Tracker {
                         }
                         emit(JSONObject().put("type", "track_left").put("room", room))
                         if (eraPrivada) {
-                            Notifications.alert(
-                                App.ctx, "SAIU DA SALA",
-                                "$targetNick saiu da sala de ID $room"
+                            notifyRoomEvent(
+                                "leave", target, room, "SAIU DA SALA",
+                                leaveText(targetNick, roomName, remaining)
                             )
                         }
                     }
@@ -513,6 +557,15 @@ object Tracker {
                                     .put("room", room).put("cid", cid).put("nick", nick)
                             )
                             emitOccupants()
+                            if (nick != cid && currentPrivacy == "PRIVADA") {
+                                notifyRoomEvent(
+                                    "enter", cid, room, "ENTROU NA SALA",
+                                    joinText(
+                                        nick, currentName.ifBlank { room },
+                                        rosterNicks(excludeCid = cid)
+                                    )
+                                )
+                            }
                         }
                     }
                 }
@@ -525,8 +578,25 @@ object Tracker {
                             .put("room", room).put("cid", cid).put("nick", nick)
                     )
                     emitOccupants()
+                    if (currentPrivacy == "PRIVADA") {
+                        notifyRoomEvent(
+                            "leave", cid, room, "SAIU DA SALA",
+                            leaveText(nick, currentName.ifBlank { room }, rosterNicks())
+                        )
+                    }
                 } else if (nick != null) {
                     emitOccupants()
+                    // saiu antes de resolver o nick: resolve e notifica com o roster restante
+                    val roomName = currentName.ifBlank { room }
+                    pool.submit {
+                        val resolved = api.usernameOf(cid)
+                        if (resolved != cid && currentRoom == room && currentPrivacy == "PRIVADA") {
+                            notifyRoomEvent(
+                                "leave", cid, room, "SAIU DA SALA",
+                                leaveText(resolved, roomName, rosterNicks())
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -609,9 +679,12 @@ object Tracker {
         emitOccupants()
         // notificacao no celular somente para sala privada (a publica fica na aba Onde)
         if (currentPrivacy == "PRIVADA") {
-            Notifications.alert(
-                App.ctx, "SALA PRIVADA",
-                "$targetNick está na sala \"$currentName\" (ID: $room)"
+            notifyRoomEvent(
+                "enter", targetCid ?: room, room, "ENTROU NA SALA",
+                joinText(
+                    targetNick, currentName.ifBlank { room },
+                    rosterNicks(excludeCid = targetCid)
+                )
             )
         }
         synchronized(this) { if (settingRoom == room) settingRoom = null }
