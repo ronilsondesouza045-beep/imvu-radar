@@ -60,6 +60,10 @@ object Tracker {
     private var lastNotifyKey = ""
     private var lastNotifyAt = 0L
 
+    private val speakLock = Any()
+    private var lastPublicSpoken = ""
+    private var lastPublicSpokenAt = 0L
+
     fun emit(evt: JSONObject) {
         lastEventAt = System.currentTimeMillis()
         try { listener?.invoke(evt) } catch (_: Exception) { }
@@ -497,6 +501,32 @@ object Tracker {
         Notifications.alert(App.ctx, title, text)
     }
 
+    // ---------------- voz (TTS nativo, instalado pelo TrackerService) ----------------
+
+    /** o service instala aqui o TextToSpeech; null = sem voz (app sem service ativo) */
+    @Volatile var speaker: ((texto: String, debounce: Boolean) -> Unit)? = null
+
+    /** fala imediata: alvo entrou/saiu, entrada em sala publica */
+    private fun falar(texto: String) {
+        try { speaker?.invoke(texto, false) } catch (_: Exception) { }
+    }
+
+    /** rajada de ocupantes (delta de outras pessoas): 500ms de debounce no service */
+    private fun falarDepois(texto: String) {
+        try { speaker?.invoke(texto, true) } catch (_: Exception) { }
+    }
+
+    /** entrada publica: IMQ e PublicWatch podem ver a mesma sala; anuncia 1x por 60s */
+    private fun falarEntradaPublica(room: String, texto: String) {
+        val now = System.currentTimeMillis()
+        synchronized(speakLock) {
+            if (room == lastPublicSpoken && now - lastPublicSpokenAt < 60_000L) return
+            lastPublicSpoken = room
+            lastPublicSpokenAt = now
+        }
+        falar(texto)
+    }
+
     private fun handlePresence(evt: JSONObject) {
         val target = targetCid ?: return
         val room = evt.optString("room")
@@ -517,6 +547,10 @@ object Tracker {
                         val roomName = currentName.ifBlank { room }
                         // snapshot ANTES de limpar o estado: quem continua na sala
                         val remaining = rosterNicks(excludeCid = target)
+                        synchronized(speakLock) {
+                            lastPublicSpoken = ""
+                            lastPublicSpokenAt = 0L
+                        }
                         synchronized(this) {
                             roomSeq++
                             currentRoom = null
@@ -531,6 +565,7 @@ object Tracker {
                                 "leave", target, room, "SAIU DA SALA",
                                 leaveText(targetNick, roomName, remaining)
                             )
+                            falar(Speech.alvoSaiuPrivada(targetNick))
                         }
                     }
                 }
@@ -569,6 +604,10 @@ object Tracker {
                                     )
                                 )
                             }
+                            if (nick != cid) {
+                                val total = synchronized(rosterLock) { roster.size }
+                                falarDepois(Speech.outroEntrou(nick, total))
+                            }
                         }
                     }
                 }
@@ -582,10 +621,14 @@ object Tracker {
                     )
                     emitOccupants()
                     if (currentPrivacy == "PRIVADA") {
+                        val restantes = rosterNicks()
                         notifyRoomEvent(
                             "leave", cid, room, "SAIU DA SALA",
-                            leaveText(nick, currentName.ifBlank { room }, rosterNicks())
+                            leaveText(nick, currentName.ifBlank { room }, restantes)
                         )
+                        falarDepois(Speech.outroSaiuPrivada(nick, targetNick, restantes))
+                    } else {
+                        falarDepois(Speech.outroSaiu(nick, targetNick, rosterNicks()))
                     }
                 } else if (nick != null) {
                     emitOccupants()
@@ -593,11 +636,17 @@ object Tracker {
                     val roomName = currentName.ifBlank { room }
                     pool.submit {
                         val resolved = api.usernameOf(cid)
-                        if (resolved != cid && currentRoom == room && currentPrivacy == "PRIVADA") {
-                            notifyRoomEvent(
-                                "leave", cid, room, "SAIU DA SALA",
-                                leaveText(resolved, roomName, rosterNicks())
-                            )
+                        if (resolved != cid && currentRoom == room) {
+                            val restantes = rosterNicks()
+                            if (currentPrivacy == "PRIVADA") {
+                                notifyRoomEvent(
+                                    "leave", cid, room, "SAIU DA SALA",
+                                    leaveText(resolved, roomName, restantes)
+                                )
+                                falarDepois(Speech.outroSaiuPrivada(resolved, targetNick, restantes))
+                            } else {
+                                falarDepois(Speech.outroSaiu(resolved, targetNick, restantes))
+                            }
                         }
                     }
                 }
@@ -646,6 +695,8 @@ object Tracker {
         if (imvu.isNotEmpty()) text.append("\n").append(imvu)
         val open = web.ifBlank { imvu }.takeIf { it.isNotBlank() }
         Notifications.alert(App.ctx, "SALA PÚBLICA", text.toString(), open)
+        val total = if (people.length() > 0) people.length() else room.optInt("occupancy", 1)
+        falarEntradaPublica(rid, Speech.alvoEntrouPublica(targetNick, name, total))
         emit(
             JSONObject().put("type", "log")
                 .put("msg", "[PUBLIC] $targetNick -> $name (ID: $rid)")
@@ -700,12 +751,17 @@ object Tracker {
         emitOccupants()
         // notificacao no celular somente para sala privada (a publica fica na aba Onde)
         if (currentPrivacy == "PRIVADA") {
+            val outros = rosterNicks(excludeCid = targetCid)
             notifyRoomEvent(
                 "enter", targetCid ?: room, room, "ENTROU NA SALA",
-                joinText(
-                    targetNick, currentName.ifBlank { room },
-                    rosterNicks(excludeCid = targetCid)
-                )
+                joinText(targetNick, currentName.ifBlank { room }, outros)
+            )
+            falar(Speech.alvoEntrouPrivada(targetNick, outros))
+        } else if (currentPrivacy == "PUBLICA") {
+            val total = synchronized(rosterLock) { roster.size }
+            falarEntradaPublica(
+                room,
+                Speech.alvoEntrouPublica(targetNick, currentName.ifBlank { room }, total)
             )
         }
         synchronized(this) { if (settingRoom == room) settingRoom = null }
