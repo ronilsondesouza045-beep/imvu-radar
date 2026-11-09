@@ -70,3 +70,12 @@ jobs:
           gh api --method PATCH repos/${{ github.repository }}/releases/assets/$ASSET_ID \
             -f name=IMVURadar-${{ steps.ver.outputs.code }}.apk > /dev/null
           echo "asset renomeado para IMVURadar-${{ steps.ver.outputs.code }}.apk"
+
+      - name: Copia com nome fixo (link permanente de download)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk IMVURadar.apk
+          gh release upload ${{ github.ref_name }} IMVURadar.apk --clobber
+          echo "link fixo: .../releases/latest/download/IMVURadar.apk"
